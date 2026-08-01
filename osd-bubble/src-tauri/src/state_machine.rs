@@ -161,3 +161,177 @@ impl StateMachine {
         *self = Self::new();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn test_initial_state() {
+        let sm = StateMachine::new();
+        assert_eq!(sm.state, BubbleState::Idle);
+        assert_eq!(sm.visible_duration, Duration::from_millis(1200));
+        assert_eq!(sm.fade_duration, Duration::from_millis(280));
+        assert!(sm.enabled);
+        assert!(sm.show_keyboard);
+        assert!(sm.show_mouse);
+        assert!(sm.show_scroll);
+    }
+
+    #[test]
+    fn test_on_key_press_transitions_to_visible() {
+        let mut sm = StateMachine::new();
+        sm.state = BubbleState::Idle;
+        
+        sm.on_key_press();
+        
+        assert!(matches!(sm.state, BubbleState::Visible { .. }));
+    }
+
+    #[test]
+    fn test_tick_idle_returns_zero_opacity() {
+        let mut sm = StateMachine::new();
+        sm.state = BubbleState::Idle;
+        
+        let (opacity, needs_redraw) = sm.tick();
+        assert_eq!(opacity, 0.0);
+        assert!(!needs_redraw);
+    }
+
+    #[test]
+    fn test_tick_visible_stays_visible() {
+        let mut sm = StateMachine::new();
+        sm.state = BubbleState::Visible { start: Instant::now() };
+        
+        let (opacity, needs_redraw) = sm.tick();
+        assert_eq!(opacity, 0.85); // default opacity
+        assert!(!needs_redraw);
+    }
+
+    #[test]
+    fn test_tick_visible_transitions_to_fading_out() {
+        let mut sm = StateMachine::new();
+        sm.visible_duration = Duration::from_millis(100);
+        sm.state = BubbleState::Visible { start: Instant::now() - Duration::from_millis(150) };
+        
+        let (opacity, needs_redraw) = sm.tick();
+        assert_eq!(opacity, 0.85);
+        assert!(needs_redraw);
+        assert!(matches!(sm.state, BubbleState::FadingOut { .. }));
+    }
+
+    #[test]
+    fn test_tick_fading_out_reaches_idle() {
+        let mut sm = StateMachine::new();
+        sm.fade_duration = Duration::from_millis(100);
+        sm.state = BubbleState::FadingOut { start: Instant::now() - Duration::from_millis(150) };
+        
+        let (opacity, needs_redraw) = sm.tick();
+        assert_eq!(opacity, 0.0);
+        assert!(needs_redraw);
+        assert_eq!(sm.state, BubbleState::Idle);
+    }
+
+    #[test]
+    fn test_tick_fading_out_calculates_alpha() {
+        let mut sm = StateMachine::new();
+        sm.fade_duration = Duration::from_millis(1000);
+        sm.opacity = 1.0; // Override default to make calculation easier
+        sm.state = BubbleState::FadingOut { start: Instant::now() - Duration::from_millis(500) };
+        
+        let (alpha, needs_redraw) = sm.tick();
+        assert!(alpha > 0.0 && alpha < 1.0);
+        assert!(needs_redraw);
+    }
+
+    #[test]
+    fn test_should_show_event_respects_enabled_flag() {
+        let mut sm = StateMachine::new();
+        sm.enabled = false;
+        
+        assert!(!sm.should_show_event(EventCategory::Keyboard));
+        assert!(!sm.should_show_event(EventCategory::Mouse));
+        assert!(!sm.should_show_event(EventCategory::Scroll));
+    }
+
+    #[test]
+    fn test_should_show_event_respects_category_flags() {
+        let mut sm = StateMachine::new();
+        sm.show_keyboard = false;
+        sm.show_mouse = false;
+        sm.show_scroll = false;
+        
+        assert!(!sm.should_show_event(EventCategory::Keyboard));
+        assert!(!sm.should_show_event(EventCategory::Mouse));
+        assert!(!sm.should_show_event(EventCategory::Scroll));
+        
+        sm.show_keyboard = true;
+        assert!(sm.should_show_event(EventCategory::Keyboard));
+    }
+
+    #[test]
+    fn test_apply_preset_classroom() {
+        let mut sm = StateMachine::new();
+        sm.apply_preset("classroom");
+        
+        assert_eq!(sm.visible_duration, Duration::from_millis(2000));
+        assert_eq!(sm.opacity, 1.0);
+        assert_eq!(sm.bubble_style, "3d_key");
+        assert_eq!(sm.scale, 1.5);
+    }
+
+    #[test]
+    fn test_apply_preset_unknown_ignores() {
+        let mut sm = StateMachine::new();
+        let original_duration = sm.visible_duration;
+        let original_style = sm.bubble_style.clone();
+        
+        sm.apply_preset("unknown_preset");
+        
+        assert_eq!(sm.visible_duration, original_duration);
+        assert_eq!(sm.bubble_style, original_style);
+    }
+
+    #[test]
+    fn test_reset_to_defaults() {
+        let mut sm = StateMachine::new();
+        sm.visible_duration = Duration::from_millis(5000);
+        sm.enabled = false;
+        sm.apply_preset("classroom");
+        
+        sm.reset_to_defaults();
+        
+        assert_eq!(sm.state, BubbleState::Idle);
+        assert_eq!(sm.visible_duration, Duration::from_millis(1200));
+        assert!(sm.enabled);
+        assert_eq!(sm.bubble_style, "default");
+    }
+
+    #[test]
+    fn test_full_lifecycle() {
+        let mut sm = StateMachine::new();
+        
+        // Initial idle state
+        let (alpha, _) = sm.tick();
+        assert_eq!(alpha, 0.0);
+        
+        // Press key - becomes visible
+        sm.on_key_press();
+        let (alpha, _) = sm.tick();
+        assert!(alpha > 0.0);
+        
+        // Wait for visible duration to pass
+        sm.visible_duration = Duration::from_millis(50);
+        sm.state = BubbleState::Visible { start: Instant::now() - Duration::from_millis(100) };
+        let (_, needs_redraw) = sm.tick();
+        assert!(needs_redraw);
+        
+        // Fade out completes
+        sm.fade_duration = Duration::from_millis(50);
+        sm.state = BubbleState::FadingOut { start: Instant::now() - Duration::from_millis(100) };
+        let (alpha, _) = sm.tick();
+        assert_eq!(alpha, 0.0);
+        assert_eq!(sm.state, BubbleState::Idle);
+    }
+}

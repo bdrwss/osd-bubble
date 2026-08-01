@@ -243,3 +243,137 @@ fn key_to_string(key: Key) -> String {
         _ => format!("{:?}", key).replace("Key", ""),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rdev::{Button, Key as RdevKey};
+
+    #[test]
+    fn test_key_tracker_new() {
+        let tracker = KeyTracker::new();
+        assert!(!tracker.ctrl);
+        assert!(!tracker.shift);
+        assert!(!tracker.alt);
+        assert!(!tracker.win);
+        assert_eq!(tracker.repeat_count, 1);
+        assert!(tracker.last_main_key.is_none());
+    }
+
+    #[test]
+    fn test_is_modifier() {
+        let tracker = KeyTracker::new();
+        assert!(tracker.is_modifier(RdevKey::ControlLeft));
+        assert!(tracker.is_modifier(RdevKey::ControlRight));
+        assert!(tracker.is_modifier(RdevKey::ShiftLeft));
+        assert!(tracker.is_modifier(RdevKey::ShiftRight));
+        assert!(tracker.is_modifier(RdevKey::Alt));
+        assert!(tracker.is_modifier(RdevKey::MetaLeft));
+        // Tab and Escape are not modifiers
+        assert!(!tracker.is_modifier(RdevKey::Tab));
+        assert!(!tracker.is_modifier(RdevKey::Escape));
+    }
+
+    #[test]
+    fn test_set_modifier() {
+        let mut tracker = KeyTracker::new();
+        
+        tracker.set_modifier(RdevKey::ControlLeft, true);
+        assert!(tracker.ctrl);
+        assert!(!tracker.shift);
+        assert!(!tracker.alt);
+        assert!(!tracker.win);
+        
+        tracker.set_modifier(RdevKey::ControlLeft, false);
+        assert!(!tracker.ctrl);
+    }
+
+    #[test]
+    fn test_format_current_with_no_modifiers_and_no_key() {
+        let tracker = KeyTracker::new();
+        let result = tracker.format_current(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_format_current_with_single_key() {
+        let tracker = KeyTracker::new();
+        let result = tracker.format_current(Some("A"));
+        assert_eq!(result, vec!["A"]);
+    }
+
+    #[test]
+    fn test_format_current_with_ctrl_and_key() {
+        let mut tracker = KeyTracker::new();
+        tracker.ctrl = true;
+        let result = tracker.format_current(Some("A"));
+        assert_eq!(result, vec!["Ctrl", "A"]);
+    }
+
+    #[test]
+    fn test_format_current_with_repeat_count() {
+        let mut tracker = KeyTracker::new();
+        tracker.repeat_count = 3;
+        let result = tracker.format_current(Some("A"));
+        assert_eq!(result, vec!["A", "×3"]);
+    }
+
+    #[test]
+    fn test_format_current_all_modifiers() {
+        let mut tracker = KeyTracker::new();
+        tracker.ctrl = true;
+        tracker.shift = true;
+        tracker.alt = true;
+        tracker.win = true;
+        let result = tracker.format_current(Some("A"));
+        assert_eq!(result, vec!["Ctrl", "Win", "Alt", "Shift", "A"]);
+    }
+
+    #[test]
+    fn test_key_to_string_arrow_keys() {
+        assert_eq!(key_to_string(RdevKey::UpArrow), "↑");
+        assert_eq!(key_to_string(RdevKey::DownArrow), "↓");
+        assert_eq!(key_to_string(RdevKey::LeftArrow), "←");
+        assert_eq!(key_to_string(RdevKey::RightArrow), "→");
+    }
+
+    #[test]
+    fn test_key_to_string_special_keys() {
+        assert_eq!(key_to_string(RdevKey::Escape), "Esc");
+        assert_eq!(key_to_string(RdevKey::Return), "Enter");
+        assert_eq!(key_to_string(RdevKey::Space), "Space");
+        assert_eq!(key_to_string(RdevKey::Backspace), "Backspace");
+        assert_eq!(key_to_string(RdevKey::Tab), "Tab");
+        assert_eq!(key_to_string(RdevKey::Delete), "Del");
+    }
+
+    #[test]
+    fn test_key_to_string_numbers() {
+        assert_eq!(key_to_string(RdevKey::Num0), "0");
+        assert_eq!(key_to_string(RdevKey::Num5), "5");
+        assert_eq!(key_to_string(RdevKey::Num9), "9");
+    }
+
+    #[test]
+    fn test_key_to_string_f_keys() {
+        assert_eq!(key_to_string(RdevKey::F1), "F1");
+        assert_eq!(key_to_string(RdevKey::F12), "F12");
+    }
+
+    #[test]
+    fn test_button_to_string() {
+        assert_eq!(button_to_string(Button::Left), "LeftClick");
+        assert_eq!(button_to_string(Button::Right), "RightClick");
+        assert_eq!(button_to_string(Button::Middle), "MiddleClick");
+    }
+
+    // Helper function for testing button conversion
+    fn button_to_string(button: Button) -> String {
+        match button {
+            Button::Left => "LeftClick",
+            Button::Right => "RightClick",
+            Button::Middle => "MiddleClick",
+            _ => return "Unknown".to_string(),
+        }.to_string()
+    }
+}

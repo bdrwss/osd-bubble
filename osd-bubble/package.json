@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0",
+    "platform": ["win32"]
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -10,9 +14,9 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "test:rust": "cd src-tauri && cargo test"
   },
-  "license": "MIT",
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "^2.5.1",
@@ -25,6 +29,7 @@
     "@sveltejs/kit": "^2.9.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tauri-apps/cli": "^2",
+    "cross-env": "^10.1.0",
     "jsdom": "^30.0.1",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
