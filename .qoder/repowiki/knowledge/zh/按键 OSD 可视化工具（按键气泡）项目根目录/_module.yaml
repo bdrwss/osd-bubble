@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: ""
+title: 按键 OSD 可视化工具（按键气泡）项目根目录
+scope:
+    - 按键OSD可视化工具-交互原型.html
+    - 按键OSD可视化工具-交互规格说明书.md
+    - 按键OSD可视化工具-功能概念定义文档.md
+    - 按键OSD可视化工具-技术选型对比分析.md
+    - 按键OSD可视化工具-竞品调研报告.md
+source_files: []
+depends_on: []
+related_to: []

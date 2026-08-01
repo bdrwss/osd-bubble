@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: osd_bubble_app
+title: OSD Bubble 按键可视化工具（Tauri + SvelteKit）
+scope:
+    - osd-bubble/
+source_files: []
+depends_on: []
+related_to: []

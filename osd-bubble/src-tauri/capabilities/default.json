@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:1420/*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "store:default",
+    "autostart:default",
+    "opener:default",
+    "dialog:default"
+  ]
+}

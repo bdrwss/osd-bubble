@@ -1,0 +1,38 @@
+# Node modules (for frontend)
+node_modules/
+
+# Rust/Cargo build artifacts (for Tauri backend)
+target/
+
+# SvelteKit generated files
+.svelte-kit/
+
+# Build outputs
+build/
+
+# Better Harness report artifacts
+.qoder/better-harness/**/*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/

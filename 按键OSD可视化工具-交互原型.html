@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>按键气泡 · 交互原型</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f0f12;
+  color: #e4e4e7;
+  height: 100vh;
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.desktop {
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(ellipse at 30% 40%, rgba(59,130,246,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 70%, rgba(139,92,246,0.05) 0%, transparent 50%),
+    #0f0f12;
+}
+
+.hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.5s;
+}
+.hint.hidden { opacity: 0; }
+.hint h2 { font-size: 22px; font-weight: 500; margin-bottom: 12px; }
+.hint p { font-size: 14px; color: #a1a1aa; line-height: 1.8; }
+
+/* 统一气泡（键盘 + 鼠标 + 滚轮共用） */
+.bubble {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(24, 24, 27, 0.88);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  font-family: 'Cascadia Code', 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+  font-size: 28px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: scale(0.88);
+  transition: none;
+}
+.bubble.visible {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 120ms cubic-bezier(0.16,1,0.3,1), transform 120ms cubic-bezier(0.16,1,0.3,1);
+}
+.bubble.fading {
+  opacity: 0;
+  transform: scale(1) translateY(-4px);
+  transition: opacity 280ms cubic-bezier(0.4,0,1,1), transform 280ms cubic-bezier(0.4,0,1,1);
+}
+/* 键盘：修饰键灰色，主键白色 */
+.bubble .modifier { color: #a1a1aa; font-weight: 400; }
+.bubble .main-key { color: #ffffff; font-weight: 600; }
+.bubble .separator { color: #52525b; margin: 0 2px; }
+/* 鼠标：功能色 */
+.bubble .mouse-key { font-weight: 600; }
+.bubble .mouse-left { color: #3b82f6; }
+.bubble .mouse-right { color: #f59e0b; }
+.bubble .mouse-middle { color: #10b981; }
+.bubble .mouse-scroll { color: #8b5cf6; }
+
+/* 控制面板 */
+.control-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(24,24,27,0.95);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  padding: 20px;
+  width: 280px;
+  z-index: 10000;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.control-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #a1a1aa;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+.control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.control-row:last-child { margin-bottom: 0; }
+.control-row label { font-size: 13px; color: #d4d4d8; }
+.control-row input[type="range"] { width: 100px; accent-color: #3b82f6; }
+.control-row select {
+  background: #27272a;
+  color: #e4e4e7;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.preset-row { display: flex; gap: 6px; margin-bottom: 16px; }
+.preset-btn {
+  flex: 1;
+  padding: 8px 4px;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  background: #1c1c1f;
+  color: #a1a1aa;
+  font-size: 11px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-btn:hover { border-color: #3b82f6; color: #e4e4e7; }
+.preset-btn.active {
+  border-color: #3b82f6;
+  background: rgba(59,130,246,0.1);
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.status-bar {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(24,24,27,0.8);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #71717a;
+  z-index: 10000;
+  backdrop-filter: blur(8px);
+}
+.status-bar .dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-right: 8px;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.paused-overlay {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(245,158,11,0.15);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #f59e0b;
+  z-index: 10001;
+  display: none;
+}
+
+/* 图例 */
+.legend {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  font-size: 11px;
+  color: #52525b;
+  line-height: 2;
+  z-index: 10000;
+}
+.legend span { margin-right: 12px; }
+.legend .c-kb { color: #ffffff; }
+.legend .c-l { color: #3b82f6; }
+.legend .c-r { color: #f59e0b; }
+.legend .c-m { color: #10b981; }
+.legend .c-s { color: #8b5cf6; }
+</style>
+</head>
+<body>
+<div class="desktop"></div>
+
+<div class="hint" id="hint">
+  <h2>按键气泡 · 交互原型</h2>
+  <p>所有输入统一显示为光标处气泡<br>
+  按键盘 → 白色气泡 ｜ 点鼠标 → 彩色气泡 ｜ 滚轮 → 紫色气泡<br>
+  Ctrl+Shift+K → 暂停/恢复</p>
+</div>
+
+<div class="status-bar" id="statusBar">
+  <span class="dot"></span>运行中 · 统一气泡 · 跟随光标
+</div>
+
+<div class="paused-overlay" id="pausedOverlay">
+  ⏸ 已暂停 · 按 Ctrl+Shift+K 恢复
+</div>
+
+<!-- 唯一的气泡元素 -->
+<div class="bubble" id="bubble"></div>
+
+<div class="legend">
+  <span class="c-kb">■ 键盘</span>
+  <span class="c-l">■ 左键</span>
+  <span class="c-r">■ 右键</span>
+  <span class="c-m">■ 中键</span>
+  <span class="c-s">■ 滚轮</span>
+</div>
+
+<div class="control-panel">
+  <h3>控制面板</h3>
+  <div class="preset-row">
+    <div class="preset-btn active" data-preset="classroom" onclick="setPreset('classroom')">课堂投屏</div>
+    <div class="preset-btn" data-preset="recording" onclick="setPreset('recording')">录屏教程</div>
+    <div class="preset-btn" data-preset="remote" onclick="setPreset('remote')">远程直播</div>
+  </div>
+  <div class="control-row">
+    <label>显示时长</label>
+    <input type="range" id="durationSlider" min="300" max="5000" value="1800" step="100" oninput="config.duration=+this.value">
+  </div>
+  <div class="control-row">
+    <label>字号</label>
+    <input type="range" id="fontSlider" min="14" max="36" value="28" step="1" oninput="config.fontSize=+this.value; applyConfig()">
+  </div>
+  <div class="control-row">
+    <label>不透明度</label>
+    <input type="range" id="opacitySlider" min="40" max="100" value="95" step="5" oninput="config.opacity=+this.value/100; applyConfig()">
+  </div>
+  <div class="control-row">
+    <label>主题</label>
+    <select id="themeSelect" onchange="config.theme=this.value; applyConfig()">
+      <option value="dark">深色</option>
+      <option value="light">浅色</option>
+    </select>
+  </div>
+</div>
+
+<script>
+let paused = false;
+let bubbleTimer = null;
+let fadeTimer = null;
+let config = { duration: 1800, fontSize: 28, opacity: 0.95, theme: 'dark' };
+
+const bubble = document.getElementById('bubble');
+const hint = document.getElementById('hint');
+let interacted = false;
+
+const presets = {
+  classroom: { duration: 1800, fontSize: 28, opacity: 0.95 },
+  recording: { duration: 1200, fontSize: 20, opacity: 0.85 },
+  remote:    { duration: 1500, fontSize: 24, opacity: 0.90 }
+};
+
+function setPreset(name) {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-preset="${name}"]`).classList.add('active');
+  const p = presets[name];
+  config.duration = p.duration;
+  config.fontSize = p.fontSize;
+  config.opacity = p.opacity;
+  document.getElementById('durationSlider').value = p.duration;
+  document.getElementById('fontSlider').value = p.fontSize;
+  document.getElementById('opacitySlider').value = p.opacity * 100;
+  applyConfig();
+}
+
+function applyConfig() {
+  bubble.style.fontSize = config.fontSize + 'px';
+  if (config.theme === 'light') {
+    bubble.style.background = 'rgba(255,255,255,0.92)';
+    bubble.style.borderColor = 'rgba(0,0,0,0.08)';
+  } else {
+    bubble.style.background = `rgba(24,24,27,${config.opacity})`;
+    bubble.style.borderColor = 'rgba(255,255,255,0.08)';
+  }
+}
+
+// 统一显示气泡
+function showBubble(html, x, y) {
+  if (paused) return;
+  if (!interacted) { interacted = true; hint.classList.add('hidden'); }
+
+  clearTimeout(bubbleTimer);
+  clearTimeout(fadeTimer);
+  bubble.classList.remove('fading');
+
+  bubble.innerHTML = html;
+
+  // 定位：光标右下方
+  let bx = x + 16, by = y + 24;
+  bubble.style.left = bx + 'px';
+  bubble.style.top = by + 'px';
+  bubble.classList.add('visible');
+
+  // 避让
+  requestAnimationFrame(() => {
+    const r = bubble.getBoundingClientRect();
+    if (r.right > window.innerWidth - 10) bx = x - r.width - 16;
+    if (r.bottom > window.innerHeight - 10) by = y - r.height - 24;
+    bubble.style.left = bx + 'px';
+    bubble.style.top = by + 'px';
+  });
+
+  // 计时淡出
+  bubbleTimer = setTimeout(() => {
+    bubble.classList.remove('visible');
+    bubble.classList.add('fading');
+    fadeTimer = setTimeout(() => bubble.classList.remove('fading'), 300);
+  }, config.duration);
+}
+
+// 键盘
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && e.key === 'K') {
+    e.preventDefault();
+    paused = !paused;
+    document.getElementById('statusBar').style.display = paused ? 'none' : 'block';
+    document.getElementById('pausedOverlay').style.display = paused ? 'block' : 'none';
+    if (paused) { clearTimeout(bubbleTimer); clearTimeout(fadeTimer); bubble.classList.remove('visible','fading'); }
+    return;
+  }
+  if (paused) return;
+  if (e.target.closest('.control-panel')) return;
+  e.preventDefault();
+
+  const parts = [];
+  if (e.ctrlKey) parts.push({ t: 'Ctrl', mod: true });
+  if (e.shiftKey) parts.push({ t: 'Shift', mod: true });
+  if (e.altKey) parts.push({ t: 'Alt', mod: true });
+  if (e.metaKey) parts.push({ t: 'Win', mod: true });
+
+  let key = e.key;
+  if (key === ' ') key = '␣';
+  else if (key === 'ArrowUp') key = '↑';
+  else if (key === 'ArrowDown') key = '↓';
+  else if (key === 'ArrowLeft') key = '←';
+  else if (key === 'ArrowRight') key = '→';
+  else if (key === 'Escape') key = 'Esc';
+  else if (key === 'Backspace') key = '⌫';
+  else if (key.length === 1) key = key.toUpperCase();
+
+  if (!['Control','Shift','Alt','Meta'].includes(e.key)) {
+    parts.push({ t: key, mod: false });
+  }
+  if (parts.length === 0) return;
+
+  let html = '';
+  parts.forEach((p, i) => {
+    if (i > 0) html += '<span class="separator"> + </span>';
+    html += p.mod ? `<span class="modifier">${p.t}</span>` : `<span class="main-key">${p.t}</span>`;
+  });
+
+  showBubble(html, e.clientX || lastMouse.x, e.clientY || lastMouse.y);
+});
+
+// 记录鼠标位置（键盘事件时用）
+let lastMouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
+
+// 鼠标点击 → 同形态气泡，彩色文字
+document.addEventListener('mousedown', (e) => {
+  if (paused) return;
+  if (e.target.closest('.control-panel')) return;
+  if (!interacted) { interacted = true; hint.classList.add('hidden'); }
+
+  const map = {
+    0: { label: 'L', cls: 'mouse-left' },
+    2: { label: 'R', cls: 'mouse-right' },
+    1: { label: 'M', cls: 'mouse-middle' },
+    3: { label: 'X1', cls: 'mouse-middle' },
+    4: { label: 'X2', cls: 'mouse-middle' }
+  };
+  const info = map[e.button] || { label: '?', cls: 'mouse-middle' };
+  const html = `<span class="mouse-key ${info.cls}">${info.label}</span>`;
+  showBubble(html, e.clientX, e.clientY);
+});
+
+document.addEventListener('contextmenu', (e) => {
+  if (!e.target.closest('.control-panel')) e.preventDefault();
+});
+
+// 滚轮 → 同形态气泡，紫色
+let scrollAccum = 0;
+let scrollTimer = null;
+document.addEventListener('wheel', (e) => {
+  if (paused) return;
+  if (e.target.closest('.control-panel')) return;
+  if (!interacted) { interacted = true; hint.classList.add('hidden'); }
+
+  const dir = e.deltaY < 0 ? '▲' : '▼';
+  const lines = Math.max(1, Math.round(Math.abs(e.deltaY) / 33));
+  const text = lines > 1 ? `${dir} ×${lines}` : dir;
+  const html = `<span class="mouse-key mouse-scroll">${text}</span>`;
+  showBubble(html, e.clientX, e.clientY);
+}, { passive: true });
+
+applyConfig();
+</script>
+</body>
+</html>

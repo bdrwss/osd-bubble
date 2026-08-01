@@ -1,0 +1,10 @@
+{
+  "enabledPlugins": {
+    "qmind@qoder-marketplace": true,
+    "superpowers@qoder-marketplace": true,
+    "context7@qoder-marketplace": true,
+    "ui-ux-pro-max-skill@qoder-marketplace": true,
+    "code-simplifier@qoder-marketplace": true,
+    "pr-review-toolkit@qoder-marketplace": true
+  }
+}
