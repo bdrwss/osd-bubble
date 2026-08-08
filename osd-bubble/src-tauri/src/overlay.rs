@@ -77,7 +77,8 @@ unsafe fn draw_bubble(hwnd: HWND, pt: POINT, alpha: f32, quadrant: u8, style: &s
     let keys = crate::CURRENT_TEXT.lock().unwrap().clone();
     if keys.is_empty() { return; }
 
-    let pixmap = RENDERER.lock().unwrap().draw(&keys, style, custom);
+    let multiplier_birth = *crate::MULTIPLIER_BIRTH.lock().unwrap();
+    let pixmap = RENDERER.lock().unwrap().draw(&keys, style, custom, multiplier_birth);
     let width = pixmap.width() as i32;
     let height = pixmap.height() as i32;
 
@@ -206,6 +207,13 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                 if pt.x != LAST_CURSOR.x || pt.y != LAST_CURSOR.y {
                     needs_redraw = true;
                     LAST_CURSOR = pt;
+                }
+
+                // 连击乘数入场动画进行中时持续重绘（Visible 状态下 tick 不会主动要求重绘）
+                if let Some(birth) = *crate::MULTIPLIER_BIRTH.lock().unwrap() {
+                    if birth.elapsed() < std::time::Duration::from_millis(150) {
+                        needs_redraw = true;
+                    }
                 }
             }
 

@@ -1,9 +1,11 @@
 use std::time::{Duration, Instant};
 use serde::{Serialize, Deserialize};
+use crate::easing::ease_out_cubic;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BubbleState {
     Idle,
+    FadingIn { start: Instant },
     Visible { start: Instant },
     FadingOut { start: Instant },
 }
@@ -51,6 +53,7 @@ pub struct StateMachine {
     pub state: BubbleState,
     pub visible_duration: Duration,
     pub fade_duration: Duration,
+    pub fade_in_duration: Duration,
     pub quadrant: u8,
     pub bubble_style: String,
     pub exclude_apps: Vec<String>,
@@ -65,12 +68,19 @@ pub struct StateMachine {
     pub scale: f32,
 }
 
+impl Default for StateMachine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StateMachine {
     pub fn new() -> Self {
         Self {
             state: BubbleState::Idle,
             visible_duration: Duration::from_millis(1200),
             fade_duration: Duration::from_millis(280),
+            fade_in_duration: Duration::from_millis(120),
             quadrant: 3, // 默认右下
             bubble_style: "default".to_string(),
             exclude_apps: Vec::new(),
@@ -98,7 +108,13 @@ impl StateMachine {
     }
 
     pub fn on_key_press(&mut self) {
-        self.state = BubbleState::Visible { start: Instant::now() };
+        // Idle 时先播放入场淡入；其余状态（淡入中/可见/淡出中）直接重置为可见，
+        // 保证连击响应不被入场动画延迟
+        self.state = if matches!(self.state, BubbleState::Idle) {
+            BubbleState::FadingIn { start: Instant::now() }
+        } else {
+            BubbleState::Visible { start: Instant::now() }
+        };
     }
 
     /// Returns the current opacity (0.0 to 1.0) and whether a redraw is needed
@@ -107,6 +123,17 @@ impl StateMachine {
         let now = Instant::now();
         let (raw_alpha, needs_redraw) = match self.state {
             BubbleState::Idle => (0.0, false),
+            BubbleState::FadingIn { start } => {
+                let elapsed = now.duration_since(start);
+                if elapsed >= self.fade_in_duration {
+                    self.state = BubbleState::Visible { start: now };
+                    (1.0, true)
+                } else {
+                    let progress = elapsed.as_secs_f32() / self.fade_in_duration.as_secs_f32();
+                    // ease-out 淡入：先快后慢地浮现
+                    (ease_out_cubic(progress), true)
+                }
+            }
             BubbleState::Visible { start } => {
                 if now.duration_since(start) >= self.visible_duration {
                     self.state = BubbleState::FadingOut { start: now };
@@ -122,8 +149,8 @@ impl StateMachine {
                     (0.0, true)
                 } else {
                     let progress = elapsed.as_secs_f32() / self.fade_duration.as_secs_f32();
-                    // ease-out fade
-                    let alpha = 1.0 - progress;
+                    // ease-out 淡出：先快后慢地消散
+                    let alpha = 1.0 - ease_out_cubic(progress);
                     (alpha, true)
                 }
             }
@@ -152,6 +179,40 @@ impl StateMachine {
                 self.bubble_style = "retro_terminal".to_string();
                 self.scale = 0.8;
             }
+            // 主题配色预设：只替换配色，不改变气泡形状与时间参数（与前端 stylePresets 保持一致）
+            "deep_space" => {
+                self.custom_style = CustomStyle {
+                    bg_color: "#101418".to_string(),
+                    bg_opacity: 0.85,
+                    text_color: "#e8eaed".to_string(),
+                    border_color: "#2e3a46".to_string(),
+                    border_width: 1.0,
+                    radius: 12.0,
+                    shadow_color: "#000000".to_string(),
+                };
+            }
+            "cream_white" => {
+                self.custom_style = CustomStyle {
+                    bg_color: "#fdf6ec".to_string(),
+                    bg_opacity: 0.95,
+                    text_color: "#3d3229".to_string(),
+                    border_color: "#e8d5b7".to_string(),
+                    border_width: 1.0,
+                    radius: 12.0,
+                    shadow_color: "#8a7a63".to_string(),
+                };
+            }
+            "neon_blue" => {
+                self.custom_style = CustomStyle {
+                    bg_color: "#0a1a2f".to_string(),
+                    bg_opacity: 0.9,
+                    text_color: "#7df9ff".to_string(),
+                    border_color: "#00d4ff".to_string(),
+                    border_width: 1.5,
+                    radius: 10.0,
+                    shadow_color: "#001f33".to_string(),
+                };
+            }
             _ => {}
         }
     }
@@ -159,6 +220,52 @@ impl StateMachine {
     /// 重置所有字段为默认值
     pub fn reset_to_defaults(&mut self) {
         *self = Self::new();
+    }
+
+    /// 从持久化的设置 JSON 恢复运行时字段。
+    /// 逐字段防御式解析：缺失或非法的字段保持当前值不变。
+    /// 注意：不重置 state（动画状态），也不处理前端专有字段（theme/autoStart 等）。
+    pub fn apply_persisted_settings(&mut self, value: &serde_json::Value) {
+        let Some(obj) = value.as_object() else { return };
+
+        if let Some(ms) = obj.get("fadeDelay").and_then(|v| v.as_u64()) {
+            self.visible_duration = Duration::from_millis(ms);
+        }
+        if let Some(ms) = obj.get("fadeInDuration").and_then(|v| v.as_u64()) {
+            self.fade_in_duration = Duration::from_millis(ms);
+        }
+        if let Some(pct) = obj.get("opacity").and_then(|v| v.as_f64()) {
+            self.opacity = ((pct / 100.0).clamp(0.4, 1.0)) as f32;
+        }
+        if let Some(q) = obj.get("quadrant").and_then(|v| v.as_str()).and_then(|s| s.parse::<u8>().ok()) {
+            if q <= 3 {
+                self.quadrant = q;
+            }
+        }
+        if let Some(style) = obj.get("bubbleStyle").and_then(|v| v.as_str()) {
+            self.bubble_style = style.to_string();
+        }
+        if let Some(enabled) = obj.get("enabled").and_then(|v| v.as_bool()) {
+            self.enabled = enabled;
+        }
+        if let Some(show) = obj.get("showKeyboard").and_then(|v| v.as_bool()) {
+            self.show_keyboard = show;
+        }
+        if let Some(show) = obj.get("showMouse").and_then(|v| v.as_bool()) {
+            self.show_mouse = show;
+        }
+        if let Some(show) = obj.get("showScroll").and_then(|v| v.as_bool()) {
+            self.show_scroll = show;
+        }
+        if let Some(apps) = obj.get("excludeApps").and_then(|v| v.as_array()) {
+            let list: Vec<String> = apps.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+            self.exclude_apps = list;
+        }
+        if let Some(cs) = obj.get("customStyle") {
+            if let Ok(style) = serde_json::from_value::<CustomStyle>(cs.clone()) {
+                self.custom_style = style;
+            }
+        }
     }
 }
 
@@ -173,6 +280,7 @@ mod tests {
         assert_eq!(sm.state, BubbleState::Idle);
         assert_eq!(sm.visible_duration, Duration::from_millis(1200));
         assert_eq!(sm.fade_duration, Duration::from_millis(280));
+        assert_eq!(sm.fade_in_duration, Duration::from_millis(120));
         assert!(sm.enabled);
         assert!(sm.show_keyboard);
         assert!(sm.show_mouse);
@@ -180,12 +288,62 @@ mod tests {
     }
 
     #[test]
-    fn test_on_key_press_transitions_to_visible() {
+    fn test_on_key_press_from_idle_transitions_to_fading_in() {
         let mut sm = StateMachine::new();
         sm.state = BubbleState::Idle;
         
         sm.on_key_press();
         
+        assert!(matches!(sm.state, BubbleState::FadingIn { .. }));
+    }
+
+    #[test]
+    fn test_on_key_press_during_fading_in_jumps_to_visible() {
+        let mut sm = StateMachine::new();
+        sm.state = BubbleState::FadingIn { start: Instant::now() };
+        
+        sm.on_key_press();
+        
+        // 连击时跳过入场动画，直接完全可见，不延迟响应
+        assert!(matches!(sm.state, BubbleState::Visible { .. }));
+    }
+
+    #[test]
+    fn test_on_key_press_during_fading_out_resets_to_visible() {
+        let mut sm = StateMachine::new();
+        sm.state = BubbleState::FadingOut { start: Instant::now() };
+        
+        sm.on_key_press();
+        
+        assert!(matches!(sm.state, BubbleState::Visible { .. }));
+    }
+
+    #[test]
+    fn test_tick_fading_in_alpha_increases() {
+        let mut sm = StateMachine::new();
+        sm.fade_in_duration = Duration::from_millis(1000);
+        sm.opacity = 1.0;
+        sm.state = BubbleState::FadingIn { start: Instant::now() - Duration::from_millis(200) };
+        
+        let (alpha1, redraw1) = sm.tick();
+        let (alpha2, redraw2) = sm.tick();
+        
+        assert!(alpha1 > 0.0 && alpha1 < 1.0);
+        assert!(alpha2 >= alpha1, "淡入过程中 alpha 应递增");
+        assert!(redraw1 && redraw2);
+        assert!(matches!(sm.state, BubbleState::FadingIn { .. }));
+    }
+
+    #[test]
+    fn test_tick_fading_in_completes_to_visible() {
+        let mut sm = StateMachine::new();
+        sm.fade_in_duration = Duration::from_millis(100);
+        sm.state = BubbleState::FadingIn { start: Instant::now() - Duration::from_millis(150) };
+        
+        let (alpha, needs_redraw) = sm.tick();
+        
+        assert_eq!(alpha, 0.85); // 默认 opacity
+        assert!(needs_redraw);
         assert!(matches!(sm.state, BubbleState::Visible { .. }));
     }
 
@@ -242,6 +400,10 @@ mod tests {
         
         let (alpha, needs_redraw) = sm.tick();
         assert!(alpha > 0.0 && alpha < 1.0);
+        // easeOutCubic 淡出：前 1/3 时长应完成超过 50% 的 alpha 下降（先快后慢）
+        sm.state = BubbleState::FadingOut { start: Instant::now() - Duration::from_millis(333) };
+        let (alpha_early, _) = sm.tick();
+        assert!(alpha_early < 0.5, "淡出应前快后慢，前 1/3 时长 alpha 应已降至 0.5 以下");
         assert!(needs_redraw);
     }
 
@@ -294,6 +456,33 @@ mod tests {
     }
 
     #[test]
+    fn test_apply_theme_preset_only_changes_colors() {
+        // 主题配色预设不应改变气泡形状与时间参数
+        for preset in ["deep_space", "cream_white", "neon_blue"] {
+            let mut sm = StateMachine::new();
+            let duration_before = sm.visible_duration;
+            let style_before = sm.bubble_style.clone();
+            let scale_before = sm.scale;
+
+            sm.apply_preset(preset);
+
+            assert_eq!(sm.visible_duration, duration_before, "{preset} 不应改显示时长");
+            assert_eq!(sm.bubble_style, style_before, "{preset} 不应改气泡形状");
+            assert_eq!(sm.scale, scale_before, "{preset} 不应改缩放");
+            assert_ne!(sm.custom_style.bg_color, "#000000", "{preset} 应替换配色");
+        }
+    }
+
+    #[test]
+    fn test_apply_theme_preset_values() {
+        let mut sm = StateMachine::new();
+        sm.apply_preset("neon_blue");
+        assert_eq!(sm.custom_style.bg_color, "#0a1a2f");
+        assert_eq!(sm.custom_style.text_color, "#7df9ff");
+        assert!((sm.custom_style.bg_opacity - 0.9).abs() < 1e-6);
+    }
+
+    #[test]
     fn test_reset_to_defaults() {
         let mut sm = StateMachine::new();
         sm.visible_duration = Duration::from_millis(5000);
@@ -316,10 +505,17 @@ mod tests {
         let (alpha, _) = sm.tick();
         assert_eq!(alpha, 0.0);
         
-        // Press key - becomes visible
+        // Press key - becomes fading in
         sm.on_key_press();
-        let (alpha, _) = sm.tick();
+        assert!(matches!(sm.state, BubbleState::FadingIn { .. }));
+        
+        // Fade in completes
+        sm.fade_in_duration = Duration::from_millis(50);
+        sm.state = BubbleState::FadingIn { start: Instant::now() - Duration::from_millis(100) };
+        let (alpha, needs_redraw) = sm.tick();
         assert!(alpha > 0.0);
+        assert!(needs_redraw);
+        assert!(matches!(sm.state, BubbleState::Visible { .. }));
         
         // Wait for visible duration to pass
         sm.visible_duration = Duration::from_millis(50);
@@ -333,5 +529,93 @@ mod tests {
         let (alpha, _) = sm.tick();
         assert_eq!(alpha, 0.0);
         assert_eq!(sm.state, BubbleState::Idle);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_full() {
+        let mut sm = StateMachine::new();
+        let json = serde_json::json!({
+            "fadeDelay": 2000,
+            "fadeInDuration": 200,
+            "opacity": 60,
+            "quadrant": "1",
+            "bubbleStyle": "cartoon",
+            "enabled": false,
+            "showKeyboard": false,
+            "showMouse": true,
+            "showScroll": true,
+            "excludeApps": ["csgo.exe"],
+            "customStyle": {
+                "bg_color": "#112233",
+                "bg_opacity": 0.5,
+                "text_color": "#ffffff",
+                "border_color": "#000000",
+                "border_width": 2.0,
+                "radius": 4.0,
+                "shadow_color": "#000000"
+            },
+            "theme": "light",
+            "autoStart": true
+        });
+
+        sm.apply_persisted_settings(&json);
+
+        assert_eq!(sm.visible_duration, Duration::from_millis(2000));
+        assert_eq!(sm.fade_in_duration, Duration::from_millis(200));
+        assert!((sm.opacity - 0.6).abs() < 1e-6);
+        assert_eq!(sm.quadrant, 1);
+        assert_eq!(sm.bubble_style, "cartoon");
+        assert!(!sm.enabled);
+        assert!(!sm.show_keyboard);
+        assert!(sm.show_mouse);
+        assert!(sm.show_scroll);
+        assert_eq!(sm.exclude_apps, vec!["csgo.exe".to_string()]);
+        assert_eq!(sm.custom_style.bg_color, "#112233");
+        assert!((sm.custom_style.border_width - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_empty_object_keeps_defaults() {
+        let mut sm = StateMachine::new();
+        let before = sm.visible_duration;
+        sm.apply_persisted_settings(&serde_json::json!({}));
+        assert_eq!(sm.visible_duration, before);
+        assert!(sm.enabled);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_invalid_json_ignored() {
+        let mut sm = StateMachine::new();
+        sm.apply_persisted_settings(&serde_json::json!("not an object"));
+        sm.apply_persisted_settings(&serde_json::json!(42));
+        assert_eq!(sm.visible_duration, Duration::from_millis(1200));
+        assert_eq!(sm.quadrant, 3);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_invalid_fields_skipped() {
+        let mut sm = StateMachine::new();
+        let json = serde_json::json!({
+            "fadeDelay": "abc",
+            "fadeInDuration": "abc",
+            "quadrant": "9",
+            "customStyle": { "bg_color": "#000000" }
+        });
+        sm.apply_persisted_settings(&json);
+        assert_eq!(sm.visible_duration, Duration::from_millis(1200));
+        assert_eq!(sm.fade_in_duration, Duration::from_millis(120));
+        assert_eq!(sm.quadrant, 3);
+        // customStyle 缺少字段，反序列化失败，保持默认
+        assert_eq!(sm.custom_style.bg_color, "#000000");
+        assert!((sm.custom_style.bg_opacity - 0.7).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_opacity_clamped() {
+        let mut sm = StateMachine::new();
+        sm.apply_persisted_settings(&serde_json::json!({ "opacity": 10 }));
+        assert!((sm.opacity - 0.4).abs() < 1e-6);
+        sm.apply_persisted_settings(&serde_json::json!({ "opacity": 500 }));
+        assert!((sm.opacity - 1.0).abs() < 1e-6);
     }
 }

@@ -2,8 +2,11 @@ pub mod overlay;
 pub mod hook;
 pub mod state_machine;
 pub mod renderer;
+pub mod easing;
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::Instant;
 use windows::Win32::Foundation::{HWND, WPARAM, LPARAM, POINT};
 use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_USER, GetCursorPos};
 use state_machine::{StateMachine, CustomStyle};
@@ -12,6 +15,7 @@ use tauri::{
     Manager, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{ShortcutState, GlobalShortcutExt};
+use tauri_plugin_store::StoreExt;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
 use windows::core::PWSTR;
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, GetForegroundWindow};
@@ -23,6 +27,52 @@ pub const WM_TICK: u32 = WM_USER + 2;
 pub static STATE: Mutex<Option<StateMachine>> = Mutex::new(None);
 pub static CURRENT_TEXT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 pub static OVERLAY_HWND: Mutex<isize> = Mutex::new(0);
+// 连击乘数（"×N"）首次出现的时间戳，用于渲染端入场动画；无乘数时为 None
+pub static MULTIPLIER_BIRTH: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// 更新当前按键文字，并同步维护乘数出生时间戳：
+/// 乘数已存在则保留首次出现时间（连击递增不重播动画），消失则清空
+fn set_current_text(keys: Vec<String>) {
+    let has_multiplier = keys.iter().any(|k| k.starts_with('×'));
+    *CURRENT_TEXT.lock().unwrap() = keys;
+    let mut birth = MULTIPLIER_BIRTH.lock().unwrap();
+    if has_multiplier {
+        if birth.is_none() {
+            *birth = Some(Instant::now());
+        }
+    } else {
+        *birth = None;
+    }
+}
+
+// TASK-001 缺陷A诊断：钩子启动期事件统计（用于定位启动后键盘事件暂时无效的问题）
+static HOOK_BOOT_TIME: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+static HOOK_EVENT_COUNT: AtomicUsize = AtomicUsize::new(0);
+static HOOK_FIRST_KEY_LOGGED: AtomicBool = AtomicBool::new(false);
+static HOOK_FIRST_MOUSE_LOGGED: AtomicBool = AtomicBool::new(false);
+
+fn log_hook_event(event_type: &rdev::EventType) {
+    let n = HOOK_EVENT_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+    let ms = HOOK_BOOT_TIME.get().map(|t| t.elapsed().as_millis()).unwrap_or(0);
+    let kind = match event_type {
+        rdev::EventType::KeyPress(_) => "KeyPress",
+        rdev::EventType::KeyRelease(_) => "KeyRelease",
+        rdev::EventType::ButtonPress(_) => "ButtonPress",
+        rdev::EventType::ButtonRelease(_) => "ButtonRelease",
+        rdev::EventType::Wheel { .. } => "Wheel",
+        rdev::EventType::MouseMove { .. } => "MouseMove",
+    };
+    if n <= 5 {
+        println!("[hook-diag] event #{} at +{}ms: {}", n, ms, kind);
+    }
+    let is_key = matches!(event_type, rdev::EventType::KeyPress(_) | rdev::EventType::KeyRelease(_));
+    if is_key && !HOOK_FIRST_KEY_LOGGED.swap(true, Ordering::Relaxed) {
+        println!("[hook-diag] first keyboard event at +{}ms (event #{})", ms, n);
+    }
+    if !is_key && !HOOK_FIRST_MOUSE_LOGGED.swap(true, Ordering::Relaxed) {
+        println!("[hook-diag] first mouse event at +{}ms (event #{})", ms, n);
+    }
+}
 
 #[tauri::command]
 fn update_settings(fade_delay: u64) {
@@ -124,7 +174,7 @@ fn get_version() -> String {
 #[tauri::command]
 fn simulate_keys() {
     let keys = vec!["Ctrl".to_string(), "C".to_string()];
-    *CURRENT_TEXT.lock().unwrap() = keys;
+    set_current_text(keys);
     
     let mut should_show = false;
     if let Some(state) = STATE.lock().unwrap().as_mut() {
@@ -214,49 +264,8 @@ pub fn run() {
         }
     });
 
-    // 启动全局钩子监听线程
-    std::thread::spawn(move || {
-        println!("正在启动全局钩子监听...");
-        let hwnd = HWND(hwnd_isize as *mut _);
-        if let Err(error) = rdev::listen(move |event| {
-            if let Some(parsed) = hook::parse_event(&event) {
-                // 检查是否启用以及事件类型是否允许显示
-                let should_process = {
-                    if let Some(state) = STATE.lock().unwrap().as_ref() {
-                        state.should_show_event(parsed.category)
-                    } else {
-                        false
-                    }
-                };
-
-                if should_process {
-                    // 更新当前按键文字
-                    *CURRENT_TEXT.lock().unwrap() = parsed.keys;
-                    
-                    // 触发状态机显示
-                    let mut should_show = false;
-                    if let Some(state) = STATE.lock().unwrap().as_mut() {
-                        if !is_foreground_blacklisted(&state.exclude_apps) {
-                            state.on_key_press();
-                            should_show = true;
-                        }
-                    }
-
-                    if should_show {
-                        // 立即触发一次渲染和移动
-                        unsafe {
-                            let mut pt = POINT::default();
-                            let _ = GetCursorPos(&mut pt);
-                            // 将 Y 轴偏移量从 24 增加到 64，以避开输入法候选框
-                            let _ = PostMessageW(Some(hwnd), WM_UPDATE_BUBBLE, WPARAM((pt.x + 16) as usize), LPARAM((pt.y + 64) as isize));
-                        }
-                    }
-                }
-            }
-        }) {
-            println!("监听失败: {:?}", error);
-        }
-    });
+    // 全局钩子监听线程已移至 setup 中启动（store 恢复设置之后），
+    // 避免启动窗口期内以默认配置处理事件（TASK-001 缺陷B）
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -274,6 +283,69 @@ pub fn run() {
             _ => {}
         })
         .setup(|app| {
+            // 从持久化 store 恢复设置，使后端不依赖前端窗口加载即可持有正确配置
+            // 必须在构建托盘菜单之前执行，保证"暂停/启用"菜单文字与真实状态一致
+            match app.store("settings.json") {
+                Ok(store) => {
+                    if let Some(json) = store.get("osdBubbleSettings") {
+                        if let Some(state) = STATE.lock().unwrap().as_mut() {
+                            state.apply_persisted_settings(&json);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("加载设置 store 失败，使用默认配置: {:?}", e);
+                }
+            }
+
+            // 启动全局钩子监听线程
+            // 必须在设置恢复之后：保证捕获到的事件按持久化配置处理，
+            // 消除启动窗口期内以默认配置显示气泡的问题（TASK-001 缺陷B）
+            std::thread::spawn(move || {
+                println!("正在启动全局钩子监听...");
+                let hwnd = HWND(*OVERLAY_HWND.lock().unwrap() as *mut _);
+                HOOK_BOOT_TIME.get_or_init(Instant::now);
+                if let Err(error) = rdev::listen(move |event| {
+                    log_hook_event(&event.event_type);
+                    if let Some(parsed) = hook::parse_event(&event) {
+                        // 检查是否启用以及事件类型是否允许显示
+                        let should_process = {
+                            if let Some(state) = STATE.lock().unwrap().as_ref() {
+                                state.should_show_event(parsed.category)
+                            } else {
+                                false
+                            }
+                        };
+
+                        if should_process {
+                            // 更新当前按键文字（同步维护乘数出生时间戳）
+                            set_current_text(parsed.keys);
+
+                            // 触发状态机显示
+                            let mut should_show = false;
+                            if let Some(state) = STATE.lock().unwrap().as_mut() {
+                                if !is_foreground_blacklisted(&state.exclude_apps) {
+                                    state.on_key_press();
+                                    should_show = true;
+                                }
+                            }
+
+                            if should_show {
+                                // 立即触发一次渲染和移动
+                                unsafe {
+                                    let mut pt = POINT::default();
+                                    let _ = GetCursorPos(&mut pt);
+                                    // 将 Y 轴偏移量从 24 增加到 64，以避开输入法候选框
+                                    let _ = PostMessageW(Some(hwnd), WM_UPDATE_BUBBLE, WPARAM((pt.x + 16) as usize), LPARAM((pt.y + 64) as isize));
+                                }
+                            }
+                        }
+                    }
+                }) {
+                    println!("监听失败: {:?}", error);
+                }
+            });
+
             // 根据当前状态生成切换菜单的文字
             let toggle_text = {
                 let state = STATE.lock().unwrap();

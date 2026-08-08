@@ -24,41 +24,43 @@ npm run test:all
 
 ## 测试结果
 
-### Rust 测试 (✅ 26/26 通过)
+> 最近更新：2026-08-08（阶段 0 收尾验证）
 
-#### state_machine.rs - 13 个测试
-- ✅ test_initial_state - 验证初始状态
-- ✅ test_on_key_press_transitions_to_visible - 按键事件触发可见状态
-- ✅ test_tick_idle_returns_zero_opacity - Idle 状态返回透明值 0
-- ✅ test_tick_visible_stays_visible - Visible 状态保持显示
-- ✅ test_tick_visible_transitions_to_fading_out - 超时后进入淡出状态
-- ✅ test_tick_fading_out_reaches_idle - 淡出完成后回到 Idle
-- ✅ test_tick_fading_out_calculates_alpha - 淡出过程计算透明度
-- ✅ test_should_show_event_respects_enabled_flag - enabled 标志控制
-- ✅ test_should_show_event_respects_category_flags - 分类标志控制
-- ✅ test_apply_preset_classroom - Classroom 预设配置
-- ✅ test_apply_preset_unknown_ignores - 未知预设忽略
-- ✅ test_reset_to_defaults - 重置到默认值
-- ✅ test_full_lifecycle - 完整生命周期测试
+### Rust 测试 (✅ 46/46 通过)
+
+执行 `cargo test` 共 46 个用例，分布在以下模块：
+
+#### easing.rs - 6 个测试
+- ✅ 四个缓动函数（linear / ease_out_cubic / ease_in_out_quad / ease_out_back）的边界值、输入钳制、单调性与过冲特性
+
+#### state_machine.rs - 24 个测试
+- ✅ 初始状态与 FadingIn 入场动画（Idle→FadingIn、淡入中途按键跳 Visible、淡出中途按键重置、alpha 递增、入场完成转 Visible）
+- ✅ tick 状态流转（Idle 返回透明、Visible 保持、超时进入 FadingOut、淡出完成回 Idle）
+- ✅ 淡出 easeOutCubic 曲线（前 1/3 时长 alpha 降至 0.5 以下，先快后慢）
+- ✅ enabled / 分类标志过滤、三个教学预设（classroom/recording/streaming）
+- ✅ 三套主题配色预设（deep_space/cream_white/neon_blue，只改配色不改形状与时长）
+- ✅ 重置默认值、完整生命周期、持久化恢复（全字段/空对象/非法 JSON/非法字段跳过/opacity 钳制）
 
 #### hook.rs - 13 个测试
-- ✅ test_key_tracker_new - KeyTracker 初始化
-- ✅ test_is_modifier - 修饰键检测
-- ✅ test_set_modifier - 设置修饰键状态
-- ✅ test_format_current_with_no_modifiers_and_no_key - 无修饰键无主键
-- ✅ test_format_current_with_single_key - 单个按键
-- ✅ test_format_current_with_ctrl_and_key - Ctrl+ 按键
-- ✅ test_format_current_with_repeat_count - 连击计数
-- ✅ test_format_current_all_modifiers - 所有修饰键组合
-- ✅ test_key_to_string_arrow_keys - 方向键转换
-- ✅ test_key_to_string_special_keys - 特殊键转换
-- ✅ test_key_to_string_numbers - 数字键转换
-- ✅ test_key_to_string_f_keys - F 功能键转换
-- ✅ test_button_to_string - 鼠标按钮转换
+- ✅ KeyTracker 初始化、修饰键检测与状态设置
+- ✅ 按键格式化（单键/Ctrl 组合/连击计数/全修饰键组合）
+- ✅ 键名转换（方向键、特殊键、数字键、F 功能键）与鼠标按钮转换
+
+#### renderer/mod.rs - 3 个测试
+- ✅ 连击乘数入场动画进度函数（无 birth 即完成、边界值、单调递增）
+
+### 前端检查 (✅ 0 errors / 0 warnings)
+
+`svelte-check` 已清零：无类型错误、无 a11y 警告（设置界面 label 均已与控件关联，控件组使用 `role="group"` + `aria-labelledby`）。
+
+### 前端单元测试 (✅ 6/6 通过)
+
+- ✅ `tests/types.test.ts` (3 个) - 类型定义与默认样式常量
+- ✅ `tests/CustomStyleEditor.test.ts` (3 个) - 自定义样式编辑器挂载、重置按钮、6 个控件渲染
 
 ## 注意事项
 
-前端类型检查 (`svelte-check`) 会显示一些现有的类型错误，这些问题不影响 Rust 测试的执行。Rust 测试是独立的且全部通过。
+`npm run test:all` 会依次执行 `svelte-check` 与 `cargo test`，两者目前均为全绿，可作为提交前的验收门槛。
 
 如需单独运行前端检查：
 ```bash

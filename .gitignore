@@ -36,3 +36,6 @@ npm-debug.log*
 
 # Test coverage
 coverage/
+
+# Scratch / diagnostic temp files
+scratch-*
