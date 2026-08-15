@@ -20,6 +20,8 @@
 </div>
 
 ---
+<img width="615" height="159" alt="image" src="https://github.com/user-attachments/assets/d455f95c-ff51-4352-af65-5827de7f09c8" />
+
 
 ## ✨ 核心特性
 
