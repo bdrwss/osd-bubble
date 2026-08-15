@@ -1836,16 +1836,15 @@
   }
 
   .about-logo {
-    width: 68px;
-    height: 68px;
-    border-radius: 16px;
-    object-fit: cover;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--edge);
-    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    width: 76px;
+    height: 76px;
+    object-fit: contain;
+    filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.36));
+    transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .about-logo:hover {
-    transform: scale(1.06) rotate(1deg);
+    transform: scale(1.10) rotate(-2deg);
   }
 
   .about-name {
