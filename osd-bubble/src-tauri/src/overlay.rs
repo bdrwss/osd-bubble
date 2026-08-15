@@ -83,8 +83,17 @@ pub fn show_overlay(tx: std::sync::mpsc::Sender<isize>) -> Result<()> {
 unsafe fn draw_bubble(hwnd: HWND, pt: POINT, frame: crate::state_machine::AnimFrame, quadrant: u8, style: &str, custom: &crate::state_machine::CustomStyle) {
     let mut is_history_mode = false;
     let mut history_items = Vec::new();
+    let mut position_mode = "follow_mouse".to_string();
+    let mut screen_anchor = "bottom_right".to_string();
+    let mut margin_x = 32;
+    let mut margin_y = 48;
+
     if let Some(state) = crate::STATE.lock().unwrap().as_mut() {
         is_history_mode = state.enable_history;
+        position_mode = state.position_mode.clone();
+        screen_anchor = state.screen_anchor.clone();
+        margin_x = state.anchor_margin_x;
+        margin_y = state.anchor_margin_y;
         if is_history_mode {
             let (items, _) = state.get_active_history();
             history_items = items;
@@ -116,37 +125,49 @@ unsafe fn draw_bubble(hwnd: HWND, pt: POINT, frame: crate::state_machine::AnimFr
     let width = pixmap.width() as i32;
     let height = pixmap.height() as i32;
 
-    let mut bx = match quadrant {
-        0 | 2 => pt.x - width - 16,
-        _ => pt.x + 16,
-    };
-    let mut by = match quadrant {
-        0 | 1 => pt.y - height - 24,
-        _ => pt.y + 24,
-    };
-
-    // 应用动画 Y 轴位移（向上滑入等）
-    by = (by as f32 + frame.offset_y) as i32;
-
     let hmonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     let mut mi = MONITORINFO {
         cbSize: std::mem::size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
     let _ = GetMonitorInfoW(hmonitor, &mut mi as *mut _ as *mut _);
-    
     let work_area = mi.rcWork;
+
+    let (mut bx, mut by) = if position_mode == "fixed_anchor" {
+        match screen_anchor.as_str() {
+            "bottom_left" => (work_area.left + margin_x, work_area.bottom - height - margin_y),
+            "bottom_center" => (work_area.left + (work_area.right - work_area.left - width) / 2, work_area.bottom - height - margin_y),
+            "top_left" => (work_area.left + margin_x, work_area.top + margin_y),
+            "top_right" => (work_area.right - width - margin_x, work_area.top + margin_y),
+            "top_center" => (work_area.left + (work_area.right - work_area.left - width) / 2, work_area.top + margin_y),
+            _ => (work_area.right - width - margin_x, work_area.bottom - height - margin_y), // bottom_right
+        }
+    } else {
+        let x = match quadrant {
+            0 | 2 => pt.x - width - 16,
+            _ => pt.x + 16,
+        };
+        let y = match quadrant {
+            0 | 1 => pt.y - height - 24,
+            _ => pt.y + 24,
+        };
+        (x, y)
+    };
+
+    // 应用动画 Y 轴位移（向上滑入等）
+    by = (by as f32 + frame.offset_y) as i32;
+
     if bx + width > work_area.right {
-        bx = pt.x - width - 16;
+        bx = work_area.right - width;
     }
     if bx < work_area.left {
-        bx = pt.x + 16;
+        bx = work_area.left;
     }
     if by + height > work_area.bottom {
-        by = pt.y - height - 24;
+        by = work_area.bottom - height;
     }
     if by < work_area.top {
-        by = pt.y + 24;
+        by = work_area.top;
     }
 
     // 将 pixmap 数据更新到 Layered Window

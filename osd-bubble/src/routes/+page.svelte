@@ -41,6 +41,10 @@
   let maxHistory = 3;
   let enableMouseRipple = false;
   let rippleSize = 'medium';
+  let positionMode = 'follow_mouse';
+  let screenAnchor = 'bottom_right';
+  let anchorMarginX = 32;
+  let anchorMarginY = 48;
   let animStyle = 'bounce';
   let theme = 'system';
   /** @type {string[]} */
@@ -145,6 +149,10 @@
           maxHistory = saved.maxHistory || 3;
           enableMouseRipple = saved.enableMouseRipple !== undefined ? saved.enableMouseRipple : false;
           rippleSize = saved.rippleSize || 'medium';
+          positionMode = saved.positionMode || 'follow_mouse';
+          screenAnchor = saved.screenAnchor || 'bottom_right';
+          anchorMarginX = saved.anchorMarginX !== undefined ? saved.anchorMarginX : 32;
+          anchorMarginY = saved.anchorMarginY !== undefined ? saved.anchorMarginY : 48;
           animStyle = saved.animStyle || 'bounce';
           theme = saved.theme || 'system';
           excludeApps = saved.excludeApps || [];
@@ -178,6 +186,9 @@
     invoke('update_settings', { fadeDelay });
     invoke('update_opacity', { opacity: opacity / 100 });
     invoke('update_position', { quadrant: parseInt(quadrant) });
+    invoke('update_position_mode', { mode: positionMode });
+    invoke('update_screen_anchor', { anchor: screenAnchor });
+    invoke('update_anchor_margins', { marginX: anchorMarginX, marginY: anchorMarginY });
     invoke('update_bubble_style', { style: bubbleStyle });
     invoke('update_anim_style', { style: animStyle });
     invoke('update_enable_history', { enable: enableHistory });
@@ -201,6 +212,10 @@
       fadeDelay,
       opacity,
       quadrant,
+      positionMode,
+      screenAnchor,
+      anchorMarginX,
+      anchorMarginY,
       bubbleScale,
       fontFamily,
       bubbleStyle,
@@ -242,7 +257,7 @@
   let firstRun = true;
 
   $: {
-    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; animStyle; enableHistory; maxHistory; enableMouseRipple; rippleSize; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
+    fadeDelay; opacity; quadrant; positionMode; screenAnchor; anchorMarginX; anchorMarginY; bubbleScale; fontFamily; bubbleStyle; animStyle; enableHistory; maxHistory; enableMouseRipple; rippleSize; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
     if (isLoaded && browser) {
       if (firstRun) {
         // 首次加载回填不触发保存，与旧行为保持一致
@@ -381,6 +396,10 @@
     maxHistory = 3;
     enableMouseRipple = false;
     rippleSize = 'medium';
+    positionMode = 'follow_mouse';
+    screenAnchor = 'bottom_right';
+    anchorMarginX = 32;
+    anchorMarginY = 48;
     animStyle = 'bounce';
     theme = 'system';
     excludeApps = [];
@@ -511,21 +530,81 @@
 
             <div class="row">
               <div class="row-line">
-                <span class="row-label" id="quadrant-label">气泡默认位置</span>
+                <span class="row-label" id="pos-mode-label">定位模式</span>
               </div>
-              <div class="quadrant-selector" role="group" aria-labelledby="quadrant-label">
-                <button class="quad-btn {quadrant === '0' ? 'active' : ''}" onclick={() => { quadrant = '0'; }} aria-label="左上方"></button>
-                <button class="quad-btn {quadrant === '1' ? 'active' : ''}" onclick={() => { quadrant = '1'; }} aria-label="右上方"></button>
-                <button class="quad-btn {quadrant === '2' ? 'active' : ''}" onclick={() => { quadrant = '2'; }} aria-label="左下方"></button>
-                <button class="quad-btn {quadrant === '3' ? 'active' : ''}" onclick={() => { quadrant = '3'; }} aria-label="右下方 (推荐)"></button>
-                <div class="center-cursor">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/>
-                  </svg>
-                </div>
+              <div class="theme-segmented" role="group" aria-labelledby="pos-mode-label">
+                <button class="theme-seg {positionMode === 'follow_mouse' ? 'active' : ''}" onclick={() => { positionMode = 'follow_mouse'; }}>
+                  跟随鼠标
+                </button>
+                <button class="theme-seg {positionMode === 'fixed_anchor' ? 'active' : ''}" onclick={() => { positionMode = 'fixed_anchor'; }}>
+                  固定屏幕锚点
+                </button>
               </div>
-              <p class="description">气泡出现在鼠标的哪个方位</p>
+              <p class="description">{positionMode === 'follow_mouse' ? '气泡随鼠标光标在 4 个象限动态浮动' : '气泡锁定在当前屏幕固定角落，不遮挡鼠标操作'}</p>
             </div>
+
+            {#if positionMode === 'follow_mouse'}
+              <div class="row">
+                <div class="row-line">
+                  <span class="row-label" id="quadrant-label">气泡相对鼠标方位</span>
+                </div>
+                <div class="quadrant-selector" role="group" aria-labelledby="quadrant-label">
+                  <button class="quad-btn {quadrant === '0' ? 'active' : ''}" onclick={() => { quadrant = '0'; }} aria-label="左上方"></button>
+                  <button class="quad-btn {quadrant === '1' ? 'active' : ''}" onclick={() => { quadrant = '1'; }} aria-label="右上方"></button>
+                  <button class="quad-btn {quadrant === '2' ? 'active' : ''}" onclick={() => { quadrant = '2'; }} aria-label="左下方"></button>
+                  <button class="quad-btn {quadrant === '3' ? 'active' : ''}" onclick={() => { quadrant = '3'; }} aria-label="右下方 (推荐)"></button>
+                  <div class="center-cursor">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/>
+                    </svg>
+                  </div>
+                </div>
+                <p class="description">气泡出现在鼠标光标的哪个方位</p>
+              </div>
+            {:else}
+              <div class="row">
+                <div class="row-line">
+                  <span class="row-label" id="anchor-label">屏幕停靠锚点</span>
+                </div>
+                <div class="theme-segmented" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;" role="group" aria-labelledby="anchor-label">
+                  <button class="theme-seg {screenAnchor === 'top_left' ? 'active' : ''}" onclick={() => { screenAnchor = 'top_left'; }}>
+                    左上角
+                  </button>
+                  <button class="theme-seg {screenAnchor === 'top_center' ? 'active' : ''}" onclick={() => { screenAnchor = 'top_center'; }}>
+                    顶部居中
+                  </button>
+                  <button class="theme-seg {screenAnchor === 'top_right' ? 'active' : ''}" onclick={() => { screenAnchor = 'top_right'; }}>
+                    右上角
+                  </button>
+                  <button class="theme-seg {screenAnchor === 'bottom_left' ? 'active' : ''}" onclick={() => { screenAnchor = 'bottom_left'; }}>
+                    左下角
+                  </button>
+                  <button class="theme-seg {screenAnchor === 'bottom_center' ? 'active' : ''}" onclick={() => { screenAnchor = 'bottom_center'; }}>
+                    底部居中
+                  </button>
+                  <button class="theme-seg {screenAnchor === 'bottom_right' ? 'active' : ''}" onclick={() => { screenAnchor = 'bottom_right'; }}>
+                    右下角 (推荐)
+                  </button>
+                </div>
+                <p class="description">气泡固定停靠在屏幕工作区的指定角落，支持多显示器跨屏自适应</p>
+              </div>
+
+              <div class="row">
+                <div class="row-line">
+                  <label for="anchor-margin-x">水平边距</label>
+                  <span class="value">{anchorMarginX}px</span>
+                </div>
+                <input id="anchor-margin-x" type="range" min="8" max="160" step="4" bind:value={anchorMarginX} />
+              </div>
+
+              <div class="row">
+                <div class="row-line">
+                  <label for="anchor-margin-y">垂直边距</label>
+                  <span class="value">{anchorMarginY}px</span>
+                </div>
+                <input id="anchor-margin-y" type="range" min="8" max="160" step="4" bind:value={anchorMarginY} />
+              </div>
+            {/if}
           </section>
 
           <section class="panel">

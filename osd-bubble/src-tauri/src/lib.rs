@@ -94,6 +94,28 @@ fn update_position(quadrant: u8) {
 }
 
 #[tauri::command]
+fn update_position_mode(mode: String) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.position_mode = mode;
+    }
+}
+
+#[tauri::command]
+fn update_screen_anchor(anchor: String) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.screen_anchor = anchor;
+    }
+}
+
+#[tauri::command]
+fn update_anchor_margins(margin_x: i32, margin_y: i32) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.anchor_margin_x = margin_x.clamp(0, 300);
+        state.anchor_margin_y = margin_y.clamp(0, 300);
+    }
+}
+
+#[tauri::command]
 fn update_bubble_style(style: String) {
     if let Some(state) = STATE.lock().unwrap().as_mut() {
         state.bubble_style = style;
@@ -549,6 +571,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             update_settings,
             update_position,
+            update_position_mode,
+            update_screen_anchor,
+            update_anchor_margins,
             update_bubble_style,
             update_exclude_apps,
             update_custom_style,

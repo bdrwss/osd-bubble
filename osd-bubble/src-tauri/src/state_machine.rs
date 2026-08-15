@@ -91,6 +91,11 @@ pub struct StateMachine {
     // 鼠标点击光环
     pub enable_mouse_ripple: bool,
     pub ripple_size: String,
+    // 定位模式与屏幕锚点
+    pub position_mode: String,
+    pub screen_anchor: String,
+    pub anchor_margin_x: i32,
+    pub anchor_margin_y: i32,
     // V1.0 新增字段
     pub enabled: bool,
     pub show_keyboard: bool,
@@ -128,6 +133,10 @@ impl StateMachine {
             next_entry_id: 1,
             enable_mouse_ripple: false,
             ripple_size: "medium".to_string(),
+            position_mode: "follow_mouse".to_string(),
+            screen_anchor: "bottom_right".to_string(),
+            anchor_margin_x: 32,
+            anchor_margin_y: 48,
             enabled: true,
             show_keyboard: true,
             show_mouse: true,
@@ -490,6 +499,18 @@ impl StateMachine {
         }
         if let Some(size) = obj.get("rippleSize").and_then(|v| v.as_str()) {
             self.ripple_size = size.to_string();
+        }
+        if let Some(mode) = obj.get("positionMode").and_then(|v| v.as_str()) {
+            self.position_mode = mode.to_string();
+        }
+        if let Some(anchor) = obj.get("screenAnchor").and_then(|v| v.as_str()) {
+            self.screen_anchor = anchor.to_string();
+        }
+        if let Some(mx) = obj.get("anchorMarginX").and_then(|v| v.as_i64()) {
+            self.anchor_margin_x = (mx as i32).clamp(0, 300);
+        }
+        if let Some(my) = obj.get("anchorMarginY").and_then(|v| v.as_i64()) {
+            self.anchor_margin_y = (my as i32).clamp(0, 300);
         }
         if let Some(apps) = obj.get("excludeApps").and_then(|v| v.as_array()) {
             let list: Vec<String> = apps.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
@@ -1022,5 +1043,25 @@ mod tests {
         }));
         assert!(sm.enable_mouse_ripple);
         assert_eq!(sm.ripple_size, "large");
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_position_mode_and_anchors() {
+        let mut sm = StateMachine::new();
+        assert_eq!(sm.position_mode, "follow_mouse");
+        assert_eq!(sm.screen_anchor, "bottom_right");
+        assert_eq!(sm.anchor_margin_x, 32);
+        assert_eq!(sm.anchor_margin_y, 48);
+
+        sm.apply_persisted_settings(&serde_json::json!({
+            "positionMode": "fixed_anchor",
+            "screenAnchor": "bottom_center",
+            "anchorMarginX": 40,
+            "anchorMarginY": 60
+        }));
+        assert_eq!(sm.position_mode, "fixed_anchor");
+        assert_eq!(sm.screen_anchor, "bottom_center");
+        assert_eq!(sm.anchor_margin_x, 40);
+        assert_eq!(sm.anchor_margin_y, 60);
     }
 }
