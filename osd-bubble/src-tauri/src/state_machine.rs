@@ -64,6 +64,7 @@ pub struct StateMachine {
     pub show_mouse: bool,
     pub show_scroll: bool,
     pub only_shortcuts: bool,
+    pub merge_repeats: bool,
     pub opacity: f32,
     pub theme: String,
     pub scale: f32,
@@ -91,6 +92,7 @@ impl StateMachine {
             show_mouse: true,
             show_scroll: true,
             only_shortcuts: false,
+            merge_repeats: true,
             opacity: 0.85,
             theme: "dark".to_string(),
             scale: 1.0,
@@ -274,6 +276,9 @@ impl StateMachine {
         }
         if let Some(only) = obj.get("onlyShortcuts").and_then(|v| v.as_bool()) {
             self.only_shortcuts = only;
+        }
+        if let Some(merge) = obj.get("mergeRepeats").and_then(|v| v.as_bool()) {
+            self.merge_repeats = merge;
         }
         if let Some(apps) = obj.get("excludeApps").and_then(|v| v.as_array()) {
             let list: Vec<String> = apps.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
@@ -668,5 +673,15 @@ mod tests {
         assert!(sm.only_shortcuts);
         sm.apply_persisted_settings(&serde_json::json!({ "onlyShortcuts": false }));
         assert!(!sm.only_shortcuts);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_merge_repeats() {
+        let mut sm = StateMachine::new();
+        assert!(sm.merge_repeats);
+        sm.apply_persisted_settings(&serde_json::json!({ "mergeRepeats": false }));
+        assert!(!sm.merge_repeats);
+        sm.apply_persisted_settings(&serde_json::json!({ "mergeRepeats": true }));
+        assert!(sm.merge_repeats);
     }
 }

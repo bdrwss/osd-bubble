@@ -36,6 +36,7 @@
   let showMouse = true;
   let showScroll = false;
   let onlyShortcuts = false;
+  let mergeRepeats = true;
   let theme = 'system';
   /** @type {string[]} */
   let excludeApps = [];
@@ -134,6 +135,7 @@
           showMouse = saved.showMouse !== undefined ? saved.showMouse : true;
           showScroll = saved.showScroll !== undefined ? saved.showScroll : false;
           onlyShortcuts = saved.onlyShortcuts !== undefined ? saved.onlyShortcuts : false;
+          mergeRepeats = saved.mergeRepeats !== undefined ? saved.mergeRepeats : true;
           theme = saved.theme || 'system';
           excludeApps = saved.excludeApps || [];
           autoStart = saved.autoStart || false;
@@ -173,6 +175,7 @@
     invoke('update_show_mouse', { show: showMouse });
     invoke('update_show_scroll', { show: showScroll });
     invoke('update_only_shortcuts', { only: onlyShortcuts });
+    invoke('update_merge_repeats', { merge: mergeRepeats });
     invoke('update_exclude_apps', { apps: excludeApps });
   }
 
@@ -192,6 +195,7 @@
       showMouse,
       showScroll,
       onlyShortcuts,
+      mergeRepeats,
       theme,
       excludeApps,
       autoStart
@@ -218,7 +222,7 @@
   let firstRun = true;
 
   $: {
-    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; theme; excludeApps; autoStart;
+    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
     if (isLoaded && browser) {
       if (firstRun) {
         // 首次加载回填不触发保存，与旧行为保持一致
@@ -352,6 +356,7 @@
     showMouse = true;
     showScroll = false;
     onlyShortcuts = false;
+    mergeRepeats = true;
     theme = 'system';
     excludeApps = [];
     autoStart = false;
@@ -616,6 +621,16 @@
                 </label>
               </div>
               <p class="description">常规打字时不弹气泡，仅在按下包含 Ctrl、Alt、Shift、Win 的快捷键时显示</p>
+            </div>
+            <div class="row">
+              <div class="row-line">
+                <label for="toggle-merge-repeats">合并连续按键计数</label>
+                <label class="switch">
+                  <input id="toggle-merge-repeats" type="checkbox" bind:checked={mergeRepeats} />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <p class="description">连续快速敲击相同按键或快捷键时，合并展示为 ×2、×3 胶囊角标</p>
             </div>
           </section>
 

@@ -146,6 +146,14 @@ fn update_only_shortcuts(only: bool) {
 }
 
 #[tauri::command]
+fn update_merge_repeats(merge: bool) {
+    hook::set_merge_repeats(merge);
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.merge_repeats = merge;
+    }
+}
+
+#[tauri::command]
 fn update_opacity(opacity: f32) {
     if let Some(state) = STATE.lock().unwrap().as_mut() {
         state.opacity = opacity.clamp(0.4, 1.0);
@@ -297,6 +305,7 @@ pub fn run() {
                     if let Some(json) = store.get("osdBubbleSettings") {
                         if let Some(state) = STATE.lock().unwrap().as_mut() {
                             state.apply_persisted_settings(&json);
+                            hook::set_merge_repeats(state.merge_repeats);
                         }
                     }
                 }
@@ -475,6 +484,7 @@ pub fn run() {
             update_show_mouse,
             update_show_scroll,
             update_only_shortcuts,
+            update_merge_repeats,
             update_opacity,
             apply_preset,
             update_theme,

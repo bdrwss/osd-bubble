@@ -23,29 +23,58 @@ pub fn parse_event(event: &Event) -> Option<ParsedInput> {
     }
 }
 
+pub fn set_merge_repeats(enabled: bool) {
+    if let Ok(mut tracker) = TRACKER.lock() {
+        tracker.merge_repeats = enabled;
+    }
+}
+
 struct KeyTracker {
     ctrl: bool,
     shift: bool,
     alt: bool,
     win: bool,
 
-    last_main_key: Option<String>,
+    last_signature: Option<Vec<String>>,
     repeat_count: u32,
     last_press_time: Instant,
+    merge_repeats: bool,
 }
 
 impl KeyTracker {
     fn new() -> Self {
         Self {
             ctrl: false, shift: false, alt: false, win: false,
-            last_main_key: None,
+            last_signature: None,
             repeat_count: 1,
             last_press_time: Instant::now(),
+            merge_repeats: true,
         }
     }
 
     fn has_modifier(&self) -> bool {
         self.ctrl || self.shift || self.alt || self.win
+    }
+
+    fn format_base(&self, main_key: Option<&str>) -> Vec<String> {
+        let mut parts = Vec::new();
+        if self.ctrl { parts.push("Ctrl".to_string()); }
+        if self.win { parts.push("Win".to_string()); }
+        if self.alt { parts.push("Alt".to_string()); }
+        if self.shift { parts.push("Shift".to_string()); }
+        if let Some(mk) = main_key {
+            parts.push(mk.to_string());
+        }
+        parts
+    }
+
+    #[allow(dead_code)]
+    fn format_current(&self, main_key: Option<&str>) -> Vec<String> {
+        let mut parts = self.format_base(main_key);
+        if self.repeat_count > 1 {
+            parts.push(format!("×{}", self.repeat_count));
+        }
+        parts
     }
 
     fn update(&mut self, event_type: &EventType) -> Option<ParsedInput> {
@@ -55,7 +84,7 @@ impl KeyTracker {
             self.shift = false;
             self.alt = false;
             self.win = false;
-            self.last_main_key = None;
+            self.last_signature = None;
         }
 
         match event_type {
@@ -63,8 +92,9 @@ impl KeyTracker {
                 if self.is_modifier(*key) {
                     self.set_modifier(*key, true);
                     self.last_press_time = Instant::now(); // 更新时间防止被超时重置
+                    let base_keys = self.format_base(None);
                     return Some(ParsedInput {
-                        keys: self.format_current(None),
+                        keys: base_keys,
                         is_mouse: false,
                         is_shortcut: true,
                         category: EventCategory::Keyboard,
@@ -73,23 +103,24 @@ impl KeyTracker {
                 
                 let key_str = key_to_string(*key);
                 let is_shortcut = self.has_modifier();
+                let base_keys = self.format_base(Some(&key_str));
                 
-                // 连击合并逻辑
-                if let Some(ref last) = self.last_main_key {
-                    if last == &key_str && self.last_press_time.elapsed().as_millis() < 500 {
-                        self.repeat_count += 1;
-                    } else {
-                        self.last_main_key = Some(key_str.clone());
-                        self.repeat_count = 1;
-                    }
+                // 连击合并逻辑：当前按键组合签名一致且在 600ms 内
+                if self.merge_repeats && self.last_signature.as_ref() == Some(&base_keys) && self.last_press_time.elapsed().as_millis() < 600 {
+                    self.repeat_count += 1;
                 } else {
-                    self.last_main_key = Some(key_str.clone());
+                    self.last_signature = Some(base_keys.clone());
                     self.repeat_count = 1;
                 }
                 self.last_press_time = Instant::now();
 
+                let mut final_keys = base_keys;
+                if self.repeat_count > 1 {
+                    final_keys.push(format!("×{}", self.repeat_count));
+                }
+
                 Some(ParsedInput {
-                    keys: self.format_current(Some(&key_str)),
+                    keys: final_keys,
                     is_mouse: false,
                     is_shortcut,
                     category: EventCategory::Keyboard,
@@ -98,12 +129,7 @@ impl KeyTracker {
             EventType::KeyRelease(key) => {
                 if self.is_modifier(*key) {
                     self.set_modifier(*key, false);
-                    self.last_main_key = None; // 释放修饰键时打断连击
-                } else if let Some(ref last) = self.last_main_key {
-                    let key_str = key_to_string(*key);
-                    if last == &key_str {
-                        // 释放主键时不清除 last_main_key，以便后续判断连击，但在超过 500ms 后会自动失效
-                    }
+                    self.last_signature = None; // 释放修饰键时打断连击
                 }
                 None
             }
@@ -115,22 +141,23 @@ impl KeyTracker {
                     _ => return None,
                 }.to_string();
                 let is_shortcut = self.has_modifier();
+                let base_keys = self.format_base(Some(&btn_str));
 
-                if let Some(ref last) = self.last_main_key {
-                    if last == &btn_str && self.last_press_time.elapsed().as_millis() < 500 {
-                        self.repeat_count += 1;
-                    } else {
-                        self.last_main_key = Some(btn_str.clone());
-                        self.repeat_count = 1;
-                    }
+                if self.merge_repeats && self.last_signature.as_ref() == Some(&base_keys) && self.last_press_time.elapsed().as_millis() < 600 {
+                    self.repeat_count += 1;
                 } else {
-                    self.last_main_key = Some(btn_str.clone());
+                    self.last_signature = Some(base_keys.clone());
                     self.repeat_count = 1;
                 }
                 self.last_press_time = Instant::now();
 
+                let mut final_keys = base_keys;
+                if self.repeat_count > 1 {
+                    final_keys.push(format!("×{}", self.repeat_count));
+                }
+
                 Some(ParsedInput {
-                    keys: self.format_current(Some(&btn_str)),
+                    keys: final_keys,
                     is_mouse: true,
                     is_shortcut,
                     category: EventCategory::Mouse,
@@ -146,22 +173,23 @@ impl KeyTracker {
                     "ScrollDown".to_string()
                 };
                 let is_shortcut = self.has_modifier();
+                let base_keys = self.format_base(Some(&btn_str));
 
-                if let Some(ref last) = self.last_main_key {
-                    if last == &btn_str && self.last_press_time.elapsed().as_millis() < 500 {
-                        self.repeat_count += 1;
-                    } else {
-                        self.last_main_key = Some(btn_str.clone());
-                        self.repeat_count = 1;
-                    }
+                if self.merge_repeats && self.last_signature.as_ref() == Some(&base_keys) && self.last_press_time.elapsed().as_millis() < 600 {
+                    self.repeat_count += 1;
                 } else {
-                    self.last_main_key = Some(btn_str.clone());
+                    self.last_signature = Some(base_keys.clone());
                     self.repeat_count = 1;
                 }
                 self.last_press_time = Instant::now();
 
+                let mut final_keys = base_keys;
+                if self.repeat_count > 1 {
+                    final_keys.push(format!("×{}", self.repeat_count));
+                }
+
                 Some(ParsedInput {
-                    keys: self.format_current(Some(&btn_str)),
+                    keys: final_keys,
                     is_mouse: true,
                     is_shortcut,
                     category: EventCategory::Scroll,
@@ -183,24 +211,6 @@ impl KeyTracker {
             Key::MetaLeft | Key::MetaRight => self.win = pressed,
             _ => {}
         }
-    }
-
-    fn format_current(&self, main_key: Option<&str>) -> Vec<String> {
-        let mut parts = Vec::new();
-        
-        if self.ctrl { parts.push("Ctrl".to_string()); }
-        if self.win { parts.push("Win".to_string()); }
-        if self.alt { parts.push("Alt".to_string()); }
-        if self.shift { parts.push("Shift".to_string()); }
-        
-        if let Some(mk) = main_key {
-            parts.push(mk.to_string());
-            if self.repeat_count > 1 {
-                parts.push(format!("×{}", self.repeat_count));
-            }
-        }
-        
-        parts
     }
 }
 
@@ -270,7 +280,7 @@ mod tests {
         assert!(!tracker.alt);
         assert!(!tracker.win);
         assert_eq!(tracker.repeat_count, 1);
-        assert!(tracker.last_main_key.is_none());
+        assert!(tracker.last_signature.is_none());
     }
 
     #[test]
@@ -411,5 +421,31 @@ mod tests {
         // 再次按 C，不再是快捷键
         let parsed_single = tracker.update(&EventType::KeyPress(RdevKey::KeyC)).unwrap();
         assert!(!parsed_single.is_shortcut);
+    }
+
+    #[test]
+    fn test_repeat_count_merging() {
+        let mut tracker = KeyTracker::new();
+        
+        // 第一次按 A
+        let p1 = tracker.update(&EventType::KeyPress(RdevKey::KeyA)).unwrap();
+        assert_eq!(p1.keys, vec!["A"]);
+
+        // 快速连续第二次按 A
+        let p2 = tracker.update(&EventType::KeyPress(RdevKey::KeyA)).unwrap();
+        assert_eq!(p2.keys, vec!["A", "×2"]);
+
+        // 快速连续第三次按 A
+        let p3 = tracker.update(&EventType::KeyPress(RdevKey::KeyA)).unwrap();
+        assert_eq!(p3.keys, vec!["A", "×3"]);
+
+        // 切换按 B，连击重置
+        let pb = tracker.update(&EventType::KeyPress(RdevKey::KeyB)).unwrap();
+        assert_eq!(pb.keys, vec!["B"]);
+
+        // 禁用合并
+        tracker.merge_repeats = false;
+        let pb2 = tracker.update(&EventType::KeyPress(RdevKey::KeyB)).unwrap();
+        assert_eq!(pb2.keys, vec!["B"]);
     }
 }

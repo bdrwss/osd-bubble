@@ -304,40 +304,55 @@ impl BubbleRenderer {
             let text_y = if !node.is_multiplier && (style == "3d_key" || style == "cartoon") { y - 2.0 } else { y };
 
             if node.is_multiplier {
-                // 根据文字颜色的亮度决定描边颜色，确保自适应任何背景
-                let r = text_color.red();
-                let g = text_color.green();
-                let b = text_color.blue();
-                let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-                
-                let outline_base = if luminance > 0.5 {
-                    Color::from_rgba8(0, 0, 0, 150) // 浅色文字使用深色描边
-                } else {
-                    Color::from_rgba8(255, 255, 255, 200) // 深色文字使用浅色描边
-                };
+                // Keyviz 风格微标胶囊（Capsule Badge）
+                let badge_h = 30.0;
+                let badge_w = block_width;
+                let badge_radius = 8.0;
+                let badge_cx = current_x + badge_w / 2.0;
+                let badge_cy = pad + body_h / 2.0;
 
-                // 入场动画：alpha 淡入 + 字号微缩放（围绕基线锚点）
-                let mult_text_color = Color::from_rgba8(
-                    (text_color.red() * 255.0) as u8,
-                    (text_color.green() * 255.0) as u8,
-                    (text_color.blue() * 255.0) as u8,
-                    (text_color.alpha() * 255.0 * mult_alpha) as u8,
-                );
-                let outline_color = Color::from_rgba8(
-                    (outline_base.red() * 255.0) as u8,
-                    (outline_base.green() * 255.0) as u8,
-                    (outline_base.blue() * 255.0) as u8,
-                    (outline_base.alpha() * 255.0 * mult_alpha) as u8,
-                );
-                let font_size = 24.0 * mult_scale;
-                // 缩放时向上偏移，保持文字底部锚定，避免入场时下沉
-                let scaled_y = text_y - (24.0 - font_size) * 0.7;
+                // 围绕胶囊中心应用缩放回弹动效
+                let scaled_w = badge_w * mult_scale;
+                let scaled_h = badge_h * mult_scale;
+                let badge_x = badge_cx - scaled_w / 2.0;
+                let badge_y = badge_cy - scaled_h / 2.0;
 
-                self.font_renderer.draw_text(&mut pixmap, &node.text, text_x - 1.0, scaled_y, font_size, outline_color);
-                self.font_renderer.draw_text(&mut pixmap, &node.text, text_x + 1.0, scaled_y, font_size, outline_color);
-                self.font_renderer.draw_text(&mut pixmap, &node.text, text_x, scaled_y - 1.0, font_size, outline_color);
-                self.font_renderer.draw_text(&mut pixmap, &node.text, text_x, scaled_y + 1.0, font_size, outline_color);
-                self.font_renderer.draw_text(&mut pixmap, &node.text, text_x, scaled_y, font_size, mult_text_color);
+                // 胶囊软阴影
+                let shadow_path = rounded_rect(badge_x, badge_y + 1.5, scaled_w, scaled_h, badge_radius);
+                let mut sp = Paint::default();
+                sp.set_color(Color::from_rgba8(0, 0, 0, (90.0 * mult_alpha) as u8));
+                sp.anti_alias = true;
+                pixmap.fill_path(&shadow_path, &sp, FillRule::Winding, Transform::identity(), None);
+
+                // 胶囊底板（深色微透底板）
+                let badge_path = rounded_rect(badge_x, badge_y, scaled_w, scaled_h, badge_radius);
+                let mut bp = Paint::default();
+                let base_alpha = (0.90 * mult_alpha).clamp(0.0, 1.0);
+                let bg_badge = Color::from_rgba8(26, 27, 33, (255.0 * base_alpha) as u8);
+                bp.set_color(bg_badge);
+                bp.anti_alias = true;
+                pixmap.fill_path(&badge_path, &bp, FillRule::Winding, Transform::identity(), None);
+
+                // 胶囊微高光细边框
+                let mut stroke_p = Paint::default();
+                let border_alpha = (0.35 * mult_alpha).clamp(0.0, 1.0);
+                stroke_p.set_color(Color::from_rgba8(255, 255, 255, (255.0 * border_alpha) as u8));
+                stroke_p.anti_alias = true;
+                let mut stroke = Stroke::default();
+                stroke.width = 1.0;
+                pixmap.stroke_path(&badge_path, &stroke_p, &stroke, Transform::identity(), None);
+
+                // 胶囊内文字渲染（居中对齐）
+                let font_size = 18.0 * mult_scale;
+                let text_x = badge_cx - (node.text_width * mult_scale) / 2.0;
+                // 垂直居中偏移
+                let text_y = badge_cy - 9.0 * mult_scale;
+
+                let txt_color = Color::from_rgba8(
+                    245, 245, 250,
+                    (255.0 * mult_alpha).clamp(0.0, 255.0) as u8,
+                );
+                self.font_renderer.draw_text(&mut pixmap, &node.text, text_x, text_y, font_size, txt_color);
 
                 current_x += block_width + 8.0;
                 continue;
