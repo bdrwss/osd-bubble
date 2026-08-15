@@ -139,6 +139,13 @@ fn update_show_scroll(show: bool) {
 }
 
 #[tauri::command]
+fn update_only_shortcuts(only: bool) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.only_shortcuts = only;
+    }
+}
+
+#[tauri::command]
 fn update_opacity(opacity: f32) {
     if let Some(state) = STATE.lock().unwrap().as_mut() {
         state.opacity = opacity.clamp(0.4, 1.0);
@@ -311,7 +318,7 @@ pub fn run() {
                         // 检查是否启用以及事件类型是否允许显示
                         let should_process = {
                             if let Some(state) = STATE.lock().unwrap().as_ref() {
-                                state.should_show_event(parsed.category)
+                                state.should_show_event_detailed(parsed.category, parsed.is_shortcut)
                             } else {
                                 false
                             }
@@ -467,6 +474,7 @@ pub fn run() {
             update_show_keyboard,
             update_show_mouse,
             update_show_scroll,
+            update_only_shortcuts,
             update_opacity,
             apply_preset,
             update_theme,

@@ -35,6 +35,7 @@
   let showKeyboard = true;
   let showMouse = true;
   let showScroll = false;
+  let onlyShortcuts = false;
   let theme = 'system';
   /** @type {string[]} */
   let excludeApps = [];
@@ -132,6 +133,7 @@
           showKeyboard = saved.showKeyboard !== undefined ? saved.showKeyboard : true;
           showMouse = saved.showMouse !== undefined ? saved.showMouse : true;
           showScroll = saved.showScroll !== undefined ? saved.showScroll : false;
+          onlyShortcuts = saved.onlyShortcuts !== undefined ? saved.onlyShortcuts : false;
           theme = saved.theme || 'system';
           excludeApps = saved.excludeApps || [];
           autoStart = saved.autoStart || false;
@@ -170,6 +172,7 @@
     invoke('update_show_keyboard', { show: showKeyboard });
     invoke('update_show_mouse', { show: showMouse });
     invoke('update_show_scroll', { show: showScroll });
+    invoke('update_only_shortcuts', { only: onlyShortcuts });
     invoke('update_exclude_apps', { apps: excludeApps });
   }
 
@@ -188,6 +191,7 @@
       showKeyboard,
       showMouse,
       showScroll,
+      onlyShortcuts,
       theme,
       excludeApps,
       autoStart
@@ -214,7 +218,7 @@
   let firstRun = true;
 
   $: {
-    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; customStyle; enabled; showKeyboard; showMouse; showScroll; theme; excludeApps; autoStart;
+    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; theme; excludeApps; autoStart;
     if (isLoaded && browser) {
       if (firstRun) {
         // 首次加载回填不触发保存，与旧行为保持一致
@@ -347,6 +351,7 @@
     showKeyboard = true;
     showMouse = true;
     showScroll = false;
+    onlyShortcuts = false;
     theme = 'system';
     excludeApps = [];
     autoStart = false;
@@ -601,6 +606,16 @@
                   <span class="slider"></span>
                 </label>
               </div>
+            </div>
+            <div class="row">
+              <div class="row-line">
+                <label for="toggle-only-shortcuts">仅显示快捷键/组合键</label>
+                <label class="switch">
+                  <input id="toggle-only-shortcuts" type="checkbox" bind:checked={onlyShortcuts} />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <p class="description">常规打字时不弹气泡，仅在按下包含 Ctrl、Alt、Shift、Win 的快捷键时显示</p>
             </div>
           </section>
 

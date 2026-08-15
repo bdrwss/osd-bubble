@@ -63,6 +63,7 @@ pub struct StateMachine {
     pub show_keyboard: bool,
     pub show_mouse: bool,
     pub show_scroll: bool,
+    pub only_shortcuts: bool,
     pub opacity: f32,
     pub theme: String,
     pub scale: f32,
@@ -89,19 +90,33 @@ impl StateMachine {
             show_keyboard: true,
             show_mouse: true,
             show_scroll: true,
+            only_shortcuts: false,
             opacity: 0.85,
             theme: "dark".to_string(),
             scale: 1.0,
         }
     }
 
-    /// 根据事件分类判断是否应该显示气泡
+    /// 根据事件分类判断是否应该显示气泡（默认兼容）
     pub fn should_show_event(&self, category: EventCategory) -> bool {
+        self.should_show_event_detailed(category, false)
+    }
+
+    /// 根据事件分类及是否包含快捷键组合判断是否应该显示气泡
+    pub fn should_show_event_detailed(&self, category: EventCategory, is_shortcut: bool) -> bool {
         if !self.enabled {
             return false;
         }
         match category {
-            EventCategory::Keyboard => self.show_keyboard,
+            EventCategory::Keyboard => {
+                if !self.show_keyboard {
+                    return false;
+                }
+                if self.only_shortcuts && !is_shortcut {
+                    return false;
+                }
+                true
+            }
             EventCategory::Mouse => self.show_mouse,
             EventCategory::Scroll => self.show_scroll,
         }
@@ -256,6 +271,9 @@ impl StateMachine {
         }
         if let Some(show) = obj.get("showScroll").and_then(|v| v.as_bool()) {
             self.show_scroll = show;
+        }
+        if let Some(only) = obj.get("onlyShortcuts").and_then(|v| v.as_bool()) {
+            self.only_shortcuts = only;
         }
         if let Some(apps) = obj.get("excludeApps").and_then(|v| v.as_array()) {
             let list: Vec<String> = apps.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
@@ -617,5 +635,38 @@ mod tests {
         assert!((sm.opacity - 0.4).abs() < 1e-6);
         sm.apply_persisted_settings(&serde_json::json!({ "opacity": 500 }));
         assert!((sm.opacity - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_should_show_event_detailed_shortcuts() {
+        let mut sm = StateMachine::new();
+        assert_eq!(sm.only_shortcuts, false);
+        
+        // 默认模式：无论是否为快捷键，键盘事件都显示
+        assert!(sm.should_show_event_detailed(EventCategory::Keyboard, false));
+        assert!(sm.should_show_event_detailed(EventCategory::Keyboard, true));
+
+        // 开启仅显示快捷键模式
+        sm.only_shortcuts = true;
+        assert!(!sm.should_show_event_detailed(EventCategory::Keyboard, false)); // 普通打字被过滤
+        assert!(sm.should_show_event_detailed(EventCategory::Keyboard, true));  // 快捷键正常显示
+
+        // 鼠标和滚轮不受影响
+        assert!(sm.should_show_event_detailed(EventCategory::Mouse, false));
+        assert!(sm.should_show_event_detailed(EventCategory::Scroll, false));
+
+        // 禁用键盘后，快捷键也不显示
+        sm.show_keyboard = false;
+        assert!(!sm.should_show_event_detailed(EventCategory::Keyboard, true));
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_only_shortcuts() {
+        let mut sm = StateMachine::new();
+        assert!(!sm.only_shortcuts);
+        sm.apply_persisted_settings(&serde_json::json!({ "onlyShortcuts": true }));
+        assert!(sm.only_shortcuts);
+        sm.apply_persisted_settings(&serde_json::json!({ "onlyShortcuts": false }));
+        assert!(!sm.only_shortcuts);
     }
 }

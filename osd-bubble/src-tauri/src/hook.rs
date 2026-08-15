@@ -7,9 +7,11 @@ lazy_static::lazy_static! {
     static ref TRACKER: Mutex<KeyTracker> = Mutex::new(KeyTracker::new());
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedInput {
     pub keys: Vec<String>,
     pub is_mouse: bool,
+    pub is_shortcut: bool,
     pub category: EventCategory,
 }
 
@@ -42,6 +44,10 @@ impl KeyTracker {
         }
     }
 
+    fn has_modifier(&self) -> bool {
+        self.ctrl || self.shift || self.alt || self.win
+    }
+
     fn update(&mut self, event_type: &EventType) -> Option<ParsedInput> {
         // 超过 5 秒没有有效操作，自动释放所有修饰键，防止 Alt+Tab 等操作被系统吞没 release 导致的卡键
         if self.last_press_time.elapsed().as_secs() > 5 {
@@ -60,11 +66,13 @@ impl KeyTracker {
                     return Some(ParsedInput {
                         keys: self.format_current(None),
                         is_mouse: false,
+                        is_shortcut: true,
                         category: EventCategory::Keyboard,
                     });
                 }
                 
                 let key_str = key_to_string(*key);
+                let is_shortcut = self.has_modifier();
                 
                 // 连击合并逻辑
                 if let Some(ref last) = self.last_main_key {
@@ -83,6 +91,7 @@ impl KeyTracker {
                 Some(ParsedInput {
                     keys: self.format_current(Some(&key_str)),
                     is_mouse: false,
+                    is_shortcut,
                     category: EventCategory::Keyboard,
                 })
             }
@@ -105,6 +114,7 @@ impl KeyTracker {
                     rdev::Button::Middle => "MiddleClick",
                     _ => return None,
                 }.to_string();
+                let is_shortcut = self.has_modifier();
 
                 if let Some(ref last) = self.last_main_key {
                     if last == &btn_str && self.last_press_time.elapsed().as_millis() < 500 {
@@ -122,6 +132,7 @@ impl KeyTracker {
                 Some(ParsedInput {
                     keys: self.format_current(Some(&btn_str)),
                     is_mouse: true,
+                    is_shortcut,
                     category: EventCategory::Mouse,
                 })
             }
@@ -134,6 +145,7 @@ impl KeyTracker {
                 } else {
                     "ScrollDown".to_string()
                 };
+                let is_shortcut = self.has_modifier();
 
                 if let Some(ref last) = self.last_main_key {
                     if last == &btn_str && self.last_press_time.elapsed().as_millis() < 500 {
@@ -151,6 +163,7 @@ impl KeyTracker {
                 Some(ParsedInput {
                     keys: self.format_current(Some(&btn_str)),
                     is_mouse: true,
+                    is_shortcut,
                     category: EventCategory::Scroll,
                 })
             }
@@ -367,7 +380,6 @@ mod tests {
         assert_eq!(button_to_string(Button::Middle), "MiddleClick");
     }
 
-    // Helper function for testing button conversion
     fn button_to_string(button: Button) -> String {
         match button {
             Button::Left => "LeftClick",
@@ -375,5 +387,29 @@ mod tests {
             Button::Middle => "MiddleClick",
             _ => return "Unknown".to_string(),
         }.to_string()
+    }
+    #[test]
+    fn test_is_shortcut_detection() {
+        let mut tracker = KeyTracker::new();
+        
+        // 普通单按键 A 不是快捷键
+        let parsed = tracker.update(&EventType::KeyPress(RdevKey::KeyA)).unwrap();
+        assert!(!parsed.is_shortcut);
+
+        // 按下 Ctrl 是修饰键，标记为 shortcut
+        let parsed_ctrl = tracker.update(&EventType::KeyPress(RdevKey::ControlLeft)).unwrap();
+        assert!(parsed_ctrl.is_shortcut);
+
+        // 在按住 Ctrl 时按 C，属于组合快捷键
+        let parsed_combo = tracker.update(&EventType::KeyPress(RdevKey::KeyC)).unwrap();
+        assert!(parsed_combo.is_shortcut);
+        assert_eq!(parsed_combo.keys, vec!["Ctrl", "C"]);
+
+        // 释放 Ctrl
+        tracker.update(&EventType::KeyRelease(RdevKey::ControlLeft));
+
+        // 再次按 C，不再是快捷键
+        let parsed_single = tracker.update(&EventType::KeyPress(RdevKey::KeyC)).unwrap();
+        assert!(!parsed_single.is_shortcut);
     }
 }
