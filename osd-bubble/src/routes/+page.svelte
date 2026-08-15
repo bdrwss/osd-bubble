@@ -704,10 +704,8 @@
           <button class="about-close" onclick={() => showAbout = false} aria-label="关闭">×</button>
         </header>
         <div class="about-body">
-          <div class="about-keys" aria-hidden="true">
-            <span class="key-cap">O</span>
-            <span class="key-cap">S</span>
-            <span class="key-cap">D</span>
+          <div class="about-brand-visual">
+            <img src="/logo.png" alt="OSD Bubble Logo" class="about-logo" />
           </div>
           <div class="about-name">OSD BUBBLE</div>
           <div class="about-meta">
@@ -1774,17 +1772,24 @@
     text-align: center;
   }
 
-  .about-keys {
+  .about-brand-visual {
     display: flex;
-    gap: 6px;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 2px;
   }
 
-  .about-keys .key-cap {
-    background: rgba(0, 0, 0, 0.72);
-    color: #fff;
-    border-radius: 6px;
-    padding: 2px 7px;
-    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  .about-logo {
+    width: 68px;
+    height: 68px;
+    border-radius: 16px;
+    object-fit: cover;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28), 0 0 0 1px var(--edge);
+    transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .about-logo:hover {
+    transform: scale(1.06) rotate(1deg);
   }
 
   .about-name {

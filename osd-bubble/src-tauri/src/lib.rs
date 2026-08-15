@@ -360,9 +360,10 @@ pub fn run() {
             let show_i = tauri::menu::MenuItem::with_id(app, "show", "设置", true, None::<&str>)?;
             let quit_i = tauri::menu::MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = tauri::menu::Menu::with_items(app, &[&toggle_i, &show_i, &quit_i])?;
+            let icon = app.default_window_icon().cloned().expect("failed to get default window icon");
 
             let _tray = TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(icon.clone())
                 .menu(&menu)
                 .on_menu_event({
                     let app_handle = app.handle().clone();
@@ -428,6 +429,11 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+
+            // 显式确保主窗口应用最新图标
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_icon(icon);
+            }
 
             // 注册全局快捷键
             app.global_shortcut().on_shortcut("Ctrl+Shift+K", move |_app, _shortcut, event| {
