@@ -81,21 +81,35 @@ pub fn show_overlay(tx: std::sync::mpsc::Sender<isize>) -> Result<()> {
 }
 
 unsafe fn draw_bubble(hwnd: HWND, pt: POINT, frame: crate::state_machine::AnimFrame, quadrant: u8, style: &str, custom: &crate::state_machine::CustomStyle) {
+    let mut is_history_mode = false;
     let mut history_items = Vec::new();
     if let Some(state) = crate::STATE.lock().unwrap().as_mut() {
-        let (items, _) = state.get_active_history();
-        history_items = items;
+        is_history_mode = state.enable_history;
+        if is_history_mode {
+            let (items, _) = state.get_active_history();
+            history_items = items;
+        }
     }
     
-    if history_items.is_empty() {
+    if !is_history_mode {
+        if frame.alpha <= 0.0 {
+            hide_overlay_window(hwnd);
+            return;
+        }
         let keys = crate::CURRENT_TEXT.lock().unwrap().clone();
-        if keys.is_empty() { return; }
+        if keys.is_empty() {
+            hide_overlay_window(hwnd);
+            return;
+        }
         let multiplier_birth = *crate::MULTIPLIER_BIRTH.lock().unwrap();
         history_items.push(crate::state_machine::RenderHistoryItem {
             keys,
             multiplier_birth,
-            alpha: 1.0,
+            alpha: frame.alpha,
         });
+    } else if history_items.is_empty() {
+        hide_overlay_window(hwnd);
+        return;
     }
 
     let pixmap = RENDERER.lock().unwrap().draw_history(&history_items, style, custom, frame.scale);
@@ -198,6 +212,29 @@ unsafe fn draw_bubble(hwnd: HWND, pt: POINT, frame: crate::state_machine::AnimFr
     let _ = DeleteObject(hbitmap.into());
     let _ = DeleteDC(hdc_mem);
     ReleaseDC(None, hdc_screen);
+}
+
+unsafe fn hide_overlay_window(hwnd: HWND) {
+    let mut pt_dst = POINT { x: -2000, y: -2000 };
+    let mut size = SIZE { cx: 1, cy: 1 };
+    let mut pt_src = POINT { x: 0, y: 0 };
+    let mut blend = BLENDFUNCTION {
+        BlendOp: AC_SRC_OVER as u8,
+        BlendFlags: 0,
+        SourceConstantAlpha: 0,
+        AlphaFormat: AC_SRC_ALPHA as u8,
+    };
+    let _ = UpdateLayeredWindow(
+        hwnd,
+        None,
+        Some(&mut pt_dst),
+        Some(&mut size),
+        None,
+        Some(&mut pt_src),
+        COLORREF(0),
+        Some(&mut blend),
+        ULW_ALPHA,
+    );
 }
 
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
