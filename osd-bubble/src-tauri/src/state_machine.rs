@@ -88,6 +88,9 @@ pub struct StateMachine {
     pub max_history: usize,
     pub history_queue: Vec<HistoryEntry>,
     pub next_entry_id: u64,
+    // 鼠标点击光环
+    pub enable_mouse_ripple: bool,
+    pub ripple_size: String,
     // V1.0 新增字段
     pub enabled: bool,
     pub show_keyboard: bool,
@@ -123,6 +126,8 @@ impl StateMachine {
             max_history: 3,
             history_queue: Vec::new(),
             next_entry_id: 1,
+            enable_mouse_ripple: false,
+            ripple_size: "medium".to_string(),
             enabled: true,
             show_keyboard: true,
             show_mouse: true,
@@ -479,6 +484,12 @@ impl StateMachine {
         }
         if let Some(max) = obj.get("maxHistory").and_then(|v| v.as_u64()) {
             self.max_history = (max as usize).clamp(1, 10);
+        }
+        if let Some(enable) = obj.get("enableMouseRipple").and_then(|v| v.as_bool()) {
+            self.enable_mouse_ripple = enable;
+        }
+        if let Some(size) = obj.get("rippleSize").and_then(|v| v.as_str()) {
+            self.ripple_size = size.to_string();
         }
         if let Some(apps) = obj.get("excludeApps").and_then(|v| v.as_array()) {
             let list: Vec<String> = apps.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
@@ -997,5 +1008,19 @@ mod tests {
         }));
         assert!(sm.enable_history);
         assert_eq!(sm.max_history, 4);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_mouse_ripple() {
+        let mut sm = StateMachine::new();
+        assert!(!sm.enable_mouse_ripple);
+        assert_eq!(sm.ripple_size, "medium");
+
+        sm.apply_persisted_settings(&serde_json::json!({
+            "enableMouseRipple": true,
+            "rippleSize": "large"
+        }));
+        assert!(sm.enable_mouse_ripple);
+        assert_eq!(sm.ripple_size, "large");
     }
 }

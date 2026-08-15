@@ -3,6 +3,7 @@ pub mod hook;
 pub mod state_machine;
 pub mod renderer;
 pub mod easing;
+pub mod ripple_overlay;
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -179,6 +180,20 @@ fn update_max_history(max: usize) {
 }
 
 #[tauri::command]
+fn update_enable_mouse_ripple(enable: bool) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.enable_mouse_ripple = enable;
+    }
+}
+
+#[tauri::command]
+fn update_ripple_size(size: String) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.ripple_size = size;
+    }
+}
+
+#[tauri::command]
 fn update_opacity(opacity: f32) {
     if let Some(state) = STATE.lock().unwrap().as_mut() {
         state.opacity = opacity.clamp(0.4, 1.0);
@@ -278,6 +293,7 @@ fn is_foreground_blacklisted(exclude_apps: &[String]) -> bool {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let (tx, rx) = std::sync::mpsc::channel();
+    let (tx_ripple, rx_ripple) = std::sync::mpsc::channel();
     
     *STATE.lock().unwrap() = Some(StateMachine::new());
 
@@ -289,17 +305,31 @@ pub fn run() {
         }
     });
 
+    // 启动独立鼠标点击涟漪光环窗口线程
+    std::thread::spawn(move || {
+        if let Err(e) = ripple_overlay::show_ripple_overlay(tx_ripple) {
+            println!("创建鼠标涟漪窗口失败: {:?}", e);
+        }
+    });
+
     let hwnd_isize = rx.recv().expect("未能接收到窗口句柄");
     *OVERLAY_HWND.lock().unwrap() = hwnd_isize;
-    let _hwnd = HWND(hwnd_isize as *mut _);
 
-    // 启动一个 60fps 的定时器线程，驱动状态机动画
+    let ripple_hwnd_isize = rx_ripple.recv().unwrap_or(0);
+
+    // 启动一个 60fps 的定时器线程，驱动状态机动画与鼠标涟漪动画
     std::thread::spawn(move || {
         let timer_hwnd = HWND(hwnd_isize as *mut _);
+        let ripple_hwnd = if ripple_hwnd_isize != 0 { Some(HWND(ripple_hwnd_isize as *mut _)) } else { None };
         loop {
             std::thread::sleep(std::time::Duration::from_millis(16));
             unsafe {
                 let _ = PostMessageW(Some(timer_hwnd), WM_TICK, WPARAM(0), LPARAM(0));
+                if let Some(rhw) = ripple_hwnd {
+                    if ripple_overlay::RIPPLE_STATE.lock().unwrap().is_some() {
+                        let _ = PostMessageW(Some(rhw), ripple_overlay::WM_RIPPLE_TICK, WPARAM(0), LPARAM(0));
+                    }
+                }
             }
         }
     });
@@ -348,6 +378,25 @@ pub fn run() {
                 HOOK_BOOT_TIME.get_or_init(Instant::now);
                 if let Err(error) = rdev::listen(move |event| {
                     log_hook_event(&event.event_type);
+
+                    // 鼠标点击光环与涟漪触发
+                    if let rdev::EventType::ButtonPress(button) = event.event_type {
+                        let (enable_ripple, is_blacklisted) = {
+                            if let Some(state) = STATE.lock().unwrap().as_ref() {
+                                (state.enable_mouse_ripple && state.enabled, is_foreground_blacklisted(&state.exclude_apps))
+                            } else {
+                                (false, false)
+                            }
+                        };
+                        if enable_ripple && !is_blacklisted {
+                            unsafe {
+                                let mut pt = POINT::default();
+                                let _ = GetCursorPos(&mut pt);
+                                ripple_overlay::trigger_ripple(pt.x, pt.y, button);
+                            }
+                        }
+                    }
+
                     if let Some(parsed) = hook::parse_event(&event) {
                         // 检查是否启用以及事件类型是否允许显示
                         let should_process = {
@@ -513,6 +562,8 @@ pub fn run() {
             update_anim_style,
             update_enable_history,
             update_max_history,
+            update_enable_mouse_ripple,
+            update_ripple_size,
             update_opacity,
             apply_preset,
             update_theme,

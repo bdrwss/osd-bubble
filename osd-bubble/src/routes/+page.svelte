@@ -39,6 +39,8 @@
   let mergeRepeats = true;
   let enableHistory = false;
   let maxHistory = 3;
+  let enableMouseRipple = false;
+  let rippleSize = 'medium';
   let animStyle = 'bounce';
   let theme = 'system';
   /** @type {string[]} */
@@ -141,6 +143,8 @@
           mergeRepeats = saved.mergeRepeats !== undefined ? saved.mergeRepeats : true;
           enableHistory = saved.enableHistory !== undefined ? saved.enableHistory : false;
           maxHistory = saved.maxHistory || 3;
+          enableMouseRipple = saved.enableMouseRipple !== undefined ? saved.enableMouseRipple : false;
+          rippleSize = saved.rippleSize || 'medium';
           animStyle = saved.animStyle || 'bounce';
           theme = saved.theme || 'system';
           excludeApps = saved.excludeApps || [];
@@ -178,6 +182,8 @@
     invoke('update_anim_style', { style: animStyle });
     invoke('update_enable_history', { enable: enableHistory });
     invoke('update_max_history', { max: maxHistory });
+    invoke('update_enable_mouse_ripple', { enable: enableMouseRipple });
+    invoke('update_ripple_size', { size: rippleSize });
     invoke('update_custom_style', { style: customStyle });
     invoke('toggle_enabled', { enabled });
     invoke('update_show_keyboard', { show: showKeyboard });
@@ -201,6 +207,8 @@
       animStyle,
       enableHistory,
       maxHistory,
+      enableMouseRipple,
+      rippleSize,
       customStyle,
       enabled,
       showKeyboard,
@@ -234,7 +242,7 @@
   let firstRun = true;
 
   $: {
-    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; animStyle; enableHistory; maxHistory; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
+    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; animStyle; enableHistory; maxHistory; enableMouseRipple; rippleSize; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
     if (isLoaded && browser) {
       if (firstRun) {
         // 首次加载回填不触发保存，与旧行为保持一致
@@ -371,6 +379,8 @@
     mergeRepeats = true;
     enableHistory = false;
     maxHistory = 3;
+    enableMouseRipple = false;
+    rippleSize = 'medium';
     animStyle = 'bounce';
     theme = 'system';
     excludeApps = [];
@@ -693,6 +703,36 @@
                     </button>
                     <button class="theme-seg {maxHistory === 4 ? 'active' : ''}" onclick={() => { maxHistory = 4; }}>
                       4 组
+                    </button>
+                  </div>
+                </div>
+              {/if}
+            </div>
+
+            <div class="row">
+              <div class="row-line">
+                <label for="toggle-mouse-ripple">鼠标点击光环</label>
+                <label class="switch">
+                  <input id="toggle-mouse-ripple" type="checkbox" bind:checked={enableMouseRipple} />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <p class="description">在鼠标点击处瞬间激发微光扩散涟漪（左键青蓝、右键琥珀、中键薄荷绿）</p>
+              
+              {#if enableMouseRipple}
+                <div style="margin-top: 10px;">
+                  <div class="row-line" style="margin-bottom: 6px;">
+                    <span class="row-label" id="ripple-size-label">光环尺寸</span>
+                  </div>
+                  <div class="theme-segmented" role="group" aria-labelledby="ripple-size-label">
+                    <button class="theme-seg {rippleSize === 'small' ? 'active' : ''}" onclick={() => { rippleSize = 'small'; }}>
+                      小 (20px)
+                    </button>
+                    <button class="theme-seg {rippleSize === 'medium' ? 'active' : ''}" onclick={() => { rippleSize = 'medium'; }}>
+                      中 (30px 推荐)
+                    </button>
+                    <button class="theme-seg {rippleSize === 'large' ? 'active' : ''}" onclick={() => { rippleSize = 'large'; }}>
+                      大 (40px)
                     </button>
                   </div>
                 </div>
