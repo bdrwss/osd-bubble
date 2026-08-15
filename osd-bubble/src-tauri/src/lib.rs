@@ -154,6 +154,13 @@ fn update_merge_repeats(merge: bool) {
 }
 
 #[tauri::command]
+fn update_anim_style(style: String) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.anim_style = style;
+    }
+}
+
+#[tauri::command]
 fn update_opacity(opacity: f32) {
     if let Some(state) = STATE.lock().unwrap().as_mut() {
         state.opacity = opacity.clamp(0.4, 1.0);
@@ -485,6 +492,7 @@ pub fn run() {
             update_show_scroll,
             update_only_shortcuts,
             update_merge_repeats,
+            update_anim_style,
             update_opacity,
             apply_preset,
             update_theme,

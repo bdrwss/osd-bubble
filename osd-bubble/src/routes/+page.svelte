@@ -37,6 +37,7 @@
   let showScroll = false;
   let onlyShortcuts = false;
   let mergeRepeats = true;
+  let animStyle = 'bounce';
   let theme = 'system';
   /** @type {string[]} */
   let excludeApps = [];
@@ -136,6 +137,7 @@
           showScroll = saved.showScroll !== undefined ? saved.showScroll : false;
           onlyShortcuts = saved.onlyShortcuts !== undefined ? saved.onlyShortcuts : false;
           mergeRepeats = saved.mergeRepeats !== undefined ? saved.mergeRepeats : true;
+          animStyle = saved.animStyle || 'bounce';
           theme = saved.theme || 'system';
           excludeApps = saved.excludeApps || [];
           autoStart = saved.autoStart || false;
@@ -169,6 +171,7 @@
     invoke('update_opacity', { opacity: opacity / 100 });
     invoke('update_position', { quadrant: parseInt(quadrant) });
     invoke('update_bubble_style', { style: bubbleStyle });
+    invoke('update_anim_style', { style: animStyle });
     invoke('update_custom_style', { style: customStyle });
     invoke('toggle_enabled', { enabled });
     invoke('update_show_keyboard', { show: showKeyboard });
@@ -189,6 +192,7 @@
       bubbleScale,
       fontFamily,
       bubbleStyle,
+      animStyle,
       customStyle,
       enabled,
       showKeyboard,
@@ -222,7 +226,7 @@
   let firstRun = true;
 
   $: {
-    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
+    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; animStyle; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
     if (isLoaded && browser) {
       if (firstRun) {
         // 首次加载回填不触发保存，与旧行为保持一致
@@ -357,6 +361,7 @@
     showScroll = false;
     onlyShortcuts = false;
     mergeRepeats = true;
+    animStyle = 'bounce';
     theme = 'system';
     excludeApps = [];
     autoStart = false;
@@ -443,6 +448,27 @@
               </div>
               <input id="fade-delay" type="range" min="300" max="5000" step="100" bind:value={fadeDelay} />
               <p class="description">操作停止后气泡继续显示的时间</p>
+            </div>
+
+            <div class="row">
+              <div class="row-line">
+                <span class="row-label" id="anim-style-label">入场动效</span>
+              </div>
+              <div class="theme-segmented" role="group" aria-labelledby="anim-style-label">
+                <button class="theme-seg {animStyle === 'bounce' ? 'active' : ''}" onclick={() => { animStyle = 'bounce'; }}>
+                  弹性回弹
+                </button>
+                <button class="theme-seg {animStyle === 'fade' ? 'active' : ''}" onclick={() => { animStyle = 'fade'; }}>
+                  平滑渐显
+                </button>
+                <button class="theme-seg {animStyle === 'slide_up' ? 'active' : ''}" onclick={() => { animStyle = 'slide_up'; }}>
+                  向上滑入
+                </button>
+                <button class="theme-seg {animStyle === 'instant' ? 'active' : ''}" onclick={() => { animStyle = 'instant'; }}>
+                  极简瞬显
+                </button>
+              </div>
+              <p class="description">按键气泡浮现时的动画缓动曲线</p>
             </div>
 
             <div class="row">

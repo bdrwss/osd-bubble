@@ -92,7 +92,7 @@ impl BubbleRenderer {
         }
     }
 
-    pub fn draw(&self, keys: &[String], style: &str, custom: &crate::state_machine::CustomStyle, multiplier_birth: Option<std::time::Instant>) -> Pixmap {
+    pub fn draw(&self, keys: &[String], style: &str, custom: &crate::state_machine::CustomStyle, multiplier_birth: Option<std::time::Instant>, scale: f32) -> Pixmap {
         let layout = BubbleLayout::build(keys);
         
         // default 风格带软阴影，画布四周预留 SHADOW_PADDING，其余风格不预留
@@ -432,7 +432,20 @@ impl BubbleRenderer {
             current_x += block_width + 8.0; // +spacing
         }
         
-        pixmap
+        if (scale - 1.0).abs() < 1e-4 {
+            pixmap
+        } else {
+            let mut scaled_pixmap = Pixmap::new(width, height).unwrap();
+            let cx = width as f32 / 2.0;
+            let cy = height as f32 / 2.0;
+            let transform = Transform::from_translate(-cx, -cy)
+                .post_scale(scale, scale)
+                .post_translate(cx, cy);
+            let mut paint = tiny_skia::PixmapPaint::default();
+            paint.quality = tiny_skia::FilterQuality::Bilinear;
+            scaled_pixmap.draw_pixmap(0, 0, pixmap.as_ref(), &paint, transform, None);
+            scaled_pixmap
+        }
     }
 }
 

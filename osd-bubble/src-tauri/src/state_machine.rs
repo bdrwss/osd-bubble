@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 use serde::{Serialize, Deserialize};
-use crate::easing::ease_out_cubic;
+use crate::easing::{ease_out_cubic, ease_out_back};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BubbleState {
@@ -49,6 +49,14 @@ impl Default for CustomStyle {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnimFrame {
+    pub alpha: f32,
+    pub offset_y: f32,
+    pub scale: f32,
+    pub needs_redraw: bool,
+}
+
 pub struct StateMachine {
     pub state: BubbleState,
     pub visible_duration: Duration,
@@ -56,8 +64,10 @@ pub struct StateMachine {
     pub fade_in_duration: Duration,
     pub quadrant: u8,
     pub bubble_style: String,
+    pub anim_style: String,
     pub exclude_apps: Vec<String>,
     pub custom_style: CustomStyle,
+    pub last_strike_time: Instant,
     // V1.0 新增字段
     pub enabled: bool,
     pub show_keyboard: bool,
@@ -85,8 +95,10 @@ impl StateMachine {
             fade_in_duration: Duration::from_millis(120),
             quadrant: 3, // 默认右下
             bubble_style: "default".to_string(),
+            anim_style: "bounce".to_string(),
             exclude_apps: Vec::new(),
             custom_style: CustomStyle::new(),
+            last_strike_time: Instant::now() - Duration::from_secs(10),
             enabled: true,
             show_keyboard: true,
             show_mouse: true,
@@ -125,20 +137,32 @@ impl StateMachine {
     }
 
     pub fn on_key_press(&mut self) {
-        // Idle 时先播放入场淡入；其余状态（淡入中/可见/淡出中）直接重置为可见，
-        // 保证连击响应不被入场动画延迟
+        let now = Instant::now();
+        self.last_strike_time = now;
+        // Idle 时先播放入场淡入；其余状态直接重置为可见，
+        // 保证连击响应不被入场动画延迟，同时每次击键都重置 last_strike_time 触发微打击动效
         self.state = if matches!(self.state, BubbleState::Idle) {
-            BubbleState::FadingIn { start: Instant::now() }
+            BubbleState::FadingIn { start: now }
         } else {
-            BubbleState::Visible { start: Instant::now() }
+            BubbleState::Visible { start: now }
         };
     }
 
-    /// Returns the current opacity (0.0 to 1.0) and whether a redraw is needed
-    /// 返回的 alpha 已乘以全局 opacity
-    pub fn tick(&mut self) -> (f32, bool) {
+    /// 综合计算当前帧的多维度动画状态（透明度、Y轴位移、缩放与重绘标记）
+    pub fn tick_frame(&mut self) -> AnimFrame {
+        if matches!(self.state, BubbleState::Idle) {
+            return AnimFrame {
+                alpha: 0.0,
+                offset_y: 0.0,
+                scale: 1.0,
+                needs_redraw: false,
+            };
+        }
+
         let now = Instant::now();
-        let (raw_alpha, needs_redraw) = match self.state {
+        let strike_elapsed = now.duration_since(self.last_strike_time);
+        
+        let (raw_alpha, mut needs_redraw) = match self.state {
             BubbleState::Idle => (0.0, false),
             BubbleState::FadingIn { start } => {
                 let elapsed = now.duration_since(start);
@@ -146,9 +170,13 @@ impl StateMachine {
                     self.state = BubbleState::Visible { start: now };
                     (1.0, true)
                 } else {
-                    let progress = elapsed.as_secs_f32() / self.fade_in_duration.as_secs_f32();
-                    // ease-out 淡入：先快后慢地浮现
-                    (ease_out_cubic(progress), true)
+                    let progress = (elapsed.as_secs_f32() / self.fade_in_duration.as_secs_f32()).clamp(0.0, 1.0);
+                    let alpha = if self.anim_style == "instant" {
+                        1.0
+                    } else {
+                        ease_out_cubic(progress)
+                    };
+                    (alpha, true)
                 }
             }
             BubbleState::Visible { start } => {
@@ -165,14 +193,51 @@ impl StateMachine {
                     self.state = BubbleState::Idle;
                     (0.0, true)
                 } else {
-                    let progress = elapsed.as_secs_f32() / self.fade_duration.as_secs_f32();
-                    // ease-out 淡出：先快后慢地消散
-                    let alpha = 1.0 - ease_out_cubic(progress);
+                    let progress = (elapsed.as_secs_f32() / self.fade_duration.as_secs_f32()).clamp(0.0, 1.0);
+                    let alpha = (1.0 - ease_out_cubic(progress)).max(0.0);
                     (alpha, true)
                 }
             }
         };
-        (raw_alpha * self.opacity, needs_redraw)
+
+        // 计算 Y 轴位移（向上滑入）
+        let mut offset_y = 0.0;
+        if self.anim_style == "slide_up" {
+            let slide_duration = 0.16; // 160ms
+            if strike_elapsed.as_secs_f32() < slide_duration {
+                let p = (strike_elapsed.as_secs_f32() / slide_duration).clamp(0.0, 1.0);
+                offset_y = (1.0 - ease_out_cubic(p)) * 16.0;
+                needs_redraw = true;
+            } else if let BubbleState::FadingOut { start } = self.state {
+                let p = (now.duration_since(start).as_secs_f32() / self.fade_duration.as_secs_f32()).clamp(0.0, 1.0);
+                offset_y = -ease_out_cubic(p) * 10.0;
+                needs_redraw = true;
+            }
+        }
+
+        // 计算弹性缩放（弹性回弹）
+        let mut scale = 1.0;
+        if self.anim_style == "bounce" {
+            let bounce_duration = 0.18; // 180ms
+            if strike_elapsed.as_secs_f32() < bounce_duration {
+                let p = (strike_elapsed.as_secs_f32() / bounce_duration).clamp(0.0, 1.0);
+                scale = 0.85 + 0.15 * ease_out_back(p);
+                needs_redraw = true;
+            }
+        }
+
+        AnimFrame {
+            alpha: raw_alpha * self.opacity,
+            offset_y,
+            scale,
+            needs_redraw,
+        }
+    }
+
+    /// 兼容现有 tick 调用
+    pub fn tick(&mut self) -> (f32, bool) {
+        let frame = self.tick_frame();
+        (frame.alpha, frame.needs_redraw)
     }
 
     /// 应用预设配置
@@ -261,6 +326,9 @@ impl StateMachine {
         }
         if let Some(style) = obj.get("bubbleStyle").and_then(|v| v.as_str()) {
             self.bubble_style = style.to_string();
+        }
+        if let Some(style) = obj.get("animStyle").and_then(|v| v.as_str()) {
+            self.anim_style = style.to_string();
         }
         if let Some(enabled) = obj.get("enabled").and_then(|v| v.as_bool()) {
             self.enabled = enabled;
@@ -683,5 +751,57 @@ mod tests {
         assert!(!sm.merge_repeats);
         sm.apply_persisted_settings(&serde_json::json!({ "mergeRepeats": true }));
         assert!(sm.merge_repeats);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_anim_style() {
+        let mut sm = StateMachine::new();
+        assert_eq!(sm.anim_style, "bounce");
+        sm.apply_persisted_settings(&serde_json::json!({ "animStyle": "fade" }));
+        assert_eq!(sm.anim_style, "fade");
+        sm.apply_persisted_settings(&serde_json::json!({ "animStyle": "instant" }));
+        assert_eq!(sm.anim_style, "instant");
+    }
+
+    #[test]
+    fn test_tick_anim_style_curves() {
+        let mut sm = StateMachine::new();
+        sm.fade_in_duration = Duration::from_millis(100);
+        sm.opacity = 1.0;
+
+        // 测试 bounce 曲线
+        sm.anim_style = "bounce".to_string();
+        sm.state = BubbleState::FadingIn { start: Instant::now() - Duration::from_millis(50) };
+        let (alpha_bounce, redraw) = sm.tick();
+        assert!(redraw);
+        assert!(alpha_bounce > 0.0 && alpha_bounce <= 1.0);
+
+        // 测试 instant 曲线（直接返回 1.0）
+        sm.anim_style = "instant".to_string();
+        sm.state = BubbleState::FadingIn { start: Instant::now() - Duration::from_millis(10) };
+        let (alpha_instant, redraw_inst) = sm.tick();
+        assert!(redraw_inst);
+        assert_eq!(alpha_instant, 1.0);
+    }
+
+    #[test]
+    fn test_tick_frame_slide_up_offset() {
+        let mut sm = StateMachine::new();
+        sm.state = BubbleState::Visible { start: Instant::now() };
+        sm.anim_style = "slide_up".to_string();
+        sm.last_strike_time = Instant::now() - Duration::from_millis(40);
+        let frame = sm.tick_frame();
+        assert!(frame.offset_y > 0.0);
+    }
+
+    #[test]
+    fn test_tick_frame_bounce_scale() {
+        let mut sm = StateMachine::new();
+        sm.state = BubbleState::Visible { start: Instant::now() };
+        sm.anim_style = "bounce".to_string();
+        sm.last_strike_time = Instant::now() - Duration::from_millis(60);
+        let frame = sm.tick_frame();
+        // 处于过冲回弹区间，scale 明显大于 0.85
+        assert!(frame.scale > 0.90);
     }
 }

@@ -59,7 +59,14 @@ pub fn show_overlay(tx: std::sync::mpsc::Sender<isize>) -> Result<()> {
         tx.send(hwnd.0 as isize).unwrap();
 
         // 初始绘制隐藏在屏幕外或默认位置
-        draw_bubble(hwnd, POINT { x: -1000, y: -1000 }, 0.0, 3, "default", &crate::state_machine::CustomStyle::new());
+        draw_bubble(
+            hwnd,
+            POINT { x: -1000, y: -1000 },
+            crate::state_machine::AnimFrame { alpha: 0.0, offset_y: 0.0, scale: 1.0, needs_redraw: false },
+            3,
+            "default",
+            &crate::state_machine::CustomStyle::new()
+        );
 
         let _ = ShowWindow(hwnd, SW_SHOW);
 
@@ -73,12 +80,12 @@ pub fn show_overlay(tx: std::sync::mpsc::Sender<isize>) -> Result<()> {
     }
 }
 
-unsafe fn draw_bubble(hwnd: HWND, pt: POINT, alpha: f32, quadrant: u8, style: &str, custom: &crate::state_machine::CustomStyle) {
+unsafe fn draw_bubble(hwnd: HWND, pt: POINT, frame: crate::state_machine::AnimFrame, quadrant: u8, style: &str, custom: &crate::state_machine::CustomStyle) {
     let keys = crate::CURRENT_TEXT.lock().unwrap().clone();
     if keys.is_empty() { return; }
 
     let multiplier_birth = *crate::MULTIPLIER_BIRTH.lock().unwrap();
-    let pixmap = RENDERER.lock().unwrap().draw(&keys, style, custom, multiplier_birth);
+    let pixmap = RENDERER.lock().unwrap().draw(&keys, style, custom, multiplier_birth, frame.scale);
     let width = pixmap.width() as i32;
     let height = pixmap.height() as i32;
 
@@ -90,6 +97,9 @@ unsafe fn draw_bubble(hwnd: HWND, pt: POINT, alpha: f32, quadrant: u8, style: &s
         0 | 1 => pt.y - height - 24,
         _ => pt.y + 24,
     };
+
+    // 应用动画 Y 轴位移（向上滑入等）
+    by = (by as f32 + frame.offset_y) as i32;
 
     let hmonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
     let mut mi = MONITORINFO {
@@ -155,7 +165,7 @@ unsafe fn draw_bubble(hwnd: HWND, pt: POINT, alpha: f32, quadrant: u8, style: &s
     let mut blend = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
         BlendFlags: 0,
-        SourceConstantAlpha: (alpha * 255.0) as u8,
+        SourceConstantAlpha: (frame.alpha * 255.0) as u8,
         AlphaFormat: AC_SRC_ALPHA as u8,
     };
 
@@ -180,16 +190,18 @@ unsafe fn draw_bubble(hwnd: HWND, pt: POINT, alpha: f32, quadrant: u8, style: &s
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         if message == crate::WM_TICK || message == crate::WM_UPDATE_BUBBLE {
-            let mut alpha = 0.0;
-            let mut needs_redraw = false;
+            let mut frame = crate::state_machine::AnimFrame {
+                alpha: 0.0,
+                offset_y: 0.0,
+                scale: 1.0,
+                needs_redraw: false,
+            };
             let mut quadrant = 3;
             let mut bubble_style = "default".to_string();
             let mut custom_style = crate::state_machine::CustomStyle::new();
 
             if let Some(state) = crate::STATE.lock().unwrap().as_mut() {
-                let (a, redraw) = state.tick();
-                alpha = a;
-                needs_redraw = redraw;
+                frame = state.tick_frame();
                 quadrant = state.quadrant;
                 bubble_style = state.bubble_style.clone();
                 custom_style = state.custom_style.clone();
@@ -200,25 +212,25 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
             
             static mut LAST_CURSOR: POINT = POINT { x: 0, y: 0 };
             
-            if alpha > 0.0 {
+            if frame.alpha > 0.0 {
                 // 持续置顶，防止被右键菜单或其他置顶窗口覆盖
                 let _ = SetWindowPos(window, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                 
                 if pt.x != LAST_CURSOR.x || pt.y != LAST_CURSOR.y {
-                    needs_redraw = true;
+                    frame.needs_redraw = true;
                     LAST_CURSOR = pt;
                 }
 
-                // 连击乘数入场动画进行中时持续重绘（Visible 状态下 tick 不会主动要求重绘）
+                // 连击乘数入场动画进行中时持续重绘
                 if let Some(birth) = *crate::MULTIPLIER_BIRTH.lock().unwrap() {
                     if birth.elapsed() < std::time::Duration::from_millis(150) {
-                        needs_redraw = true;
+                        frame.needs_redraw = true;
                     }
                 }
             }
 
-            if message == crate::WM_UPDATE_BUBBLE || needs_redraw {
-                draw_bubble(window, pt, alpha, quadrant, &bubble_style, &custom_style);
+            if message == crate::WM_UPDATE_BUBBLE || frame.needs_redraw {
+                draw_bubble(window, pt, frame, quadrant, &bubble_style, &custom_style);
             }
             return LRESULT(0);
         }
