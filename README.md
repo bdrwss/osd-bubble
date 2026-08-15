@@ -40,7 +40,7 @@
 
 ## 📥 下载与安装
 
-进入 [Releases 页面](https://github.com/) 下载最新正式版：
+进入 [Releases 页面](https://github.com/bdrwss/osd-bubble/releases) 下载最新正式版：
 
 | 分发版本 | 文件类型 | 说明 |
 | :--- | :--- | :--- |
@@ -68,7 +68,7 @@
 
 ### 1. 克隆代码仓库
 ```bash
-git clone https://github.com/your-username/osd-bubble.git
+git clone https://github.com/bdrwss/osd-bubble.git
 cd osd-bubble/osd-bubble
 ```
 

@@ -40,7 +40,7 @@ Tailored for **Screen Recording · Live Streaming · Online Tutorials · Present
 
 ## 📥 Installation
 
-Download the latest version from the [Releases page](https://github.com/):
+Download the latest version from the [Releases page](https://github.com/bdrwss/osd-bubble/releases):
 
 - **Portable Standalone (`osd-bubble.exe`)**: No installation required, run directly anywhere.
 - **Installer Setup (`osd-bubble_1.0.0_x64-setup.exe`)**: Standard Windows installer with start menu & autostart integration.
