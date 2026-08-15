@@ -34,7 +34,6 @@ pub static MULTIPLIER_BIRTH: Mutex<Option<Instant>> = Mutex::new(None);
 /// 乘数已存在则保留首次出现时间（连击递增不重播动画），消失则清空
 fn set_current_text(keys: Vec<String>) {
     let has_multiplier = keys.iter().any(|k| k.starts_with('×'));
-    *CURRENT_TEXT.lock().unwrap() = keys;
     let mut birth = MULTIPLIER_BIRTH.lock().unwrap();
     if has_multiplier {
         if birth.is_none() {
@@ -42,6 +41,11 @@ fn set_current_text(keys: Vec<String>) {
         }
     } else {
         *birth = None;
+    }
+    let mult_birth = *birth;
+    *CURRENT_TEXT.lock().unwrap() = keys.clone();
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.push_history(keys, mult_birth);
     }
 }
 
@@ -157,6 +161,20 @@ fn update_merge_repeats(merge: bool) {
 fn update_anim_style(style: String) {
     if let Some(state) = STATE.lock().unwrap().as_mut() {
         state.anim_style = style;
+    }
+}
+
+#[tauri::command]
+fn update_enable_history(enable: bool) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.enable_history = enable;
+    }
+}
+
+#[tauri::command]
+fn update_max_history(max: usize) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.max_history = max.clamp(1, 10);
     }
 }
 
@@ -493,6 +511,8 @@ pub fn run() {
             update_only_shortcuts,
             update_merge_repeats,
             update_anim_style,
+            update_enable_history,
+            update_max_history,
             update_opacity,
             apply_preset,
             update_theme,

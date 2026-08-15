@@ -81,11 +81,24 @@ pub fn show_overlay(tx: std::sync::mpsc::Sender<isize>) -> Result<()> {
 }
 
 unsafe fn draw_bubble(hwnd: HWND, pt: POINT, frame: crate::state_machine::AnimFrame, quadrant: u8, style: &str, custom: &crate::state_machine::CustomStyle) {
-    let keys = crate::CURRENT_TEXT.lock().unwrap().clone();
-    if keys.is_empty() { return; }
+    let mut history_items = Vec::new();
+    if let Some(state) = crate::STATE.lock().unwrap().as_mut() {
+        let (items, _) = state.get_active_history();
+        history_items = items;
+    }
+    
+    if history_items.is_empty() {
+        let keys = crate::CURRENT_TEXT.lock().unwrap().clone();
+        if keys.is_empty() { return; }
+        let multiplier_birth = *crate::MULTIPLIER_BIRTH.lock().unwrap();
+        history_items.push(crate::state_machine::RenderHistoryItem {
+            keys,
+            multiplier_birth,
+            alpha: 1.0,
+        });
+    }
 
-    let multiplier_birth = *crate::MULTIPLIER_BIRTH.lock().unwrap();
-    let pixmap = RENDERER.lock().unwrap().draw(&keys, style, custom, multiplier_birth, frame.scale);
+    let pixmap = RENDERER.lock().unwrap().draw_history(&history_items, style, custom, frame.scale);
     let width = pixmap.width() as i32;
     let height = pixmap.height() as i32;
 
@@ -165,7 +178,7 @@ unsafe fn draw_bubble(hwnd: HWND, pt: POINT, frame: crate::state_machine::AnimFr
     let mut blend = BLENDFUNCTION {
         BlendOp: AC_SRC_OVER as u8,
         BlendFlags: 0,
-        SourceConstantAlpha: (frame.alpha * 255.0) as u8,
+        SourceConstantAlpha: 255,
         AlphaFormat: AC_SRC_ALPHA as u8,
     };
 
@@ -199,12 +212,15 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
             let mut quadrant = 3;
             let mut bubble_style = "default".to_string();
             let mut custom_style = crate::state_machine::CustomStyle::new();
+            let mut history_animating = false;
 
             if let Some(state) = crate::STATE.lock().unwrap().as_mut() {
                 frame = state.tick_frame();
                 quadrant = state.quadrant;
                 bubble_style = state.bubble_style.clone();
                 custom_style = state.custom_style.clone();
+                let (_, anim) = state.get_active_history();
+                history_animating = anim;
             }
 
             let mut pt = POINT::default();
@@ -212,7 +228,7 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
             
             static mut LAST_CURSOR: POINT = POINT { x: 0, y: 0 };
             
-            if frame.alpha > 0.0 {
+            if frame.alpha > 0.0 || history_animating {
                 // 持续置顶，防止被右键菜单或其他置顶窗口覆盖
                 let _ = SetWindowPos(window, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                 
@@ -226,6 +242,10 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                     if birth.elapsed() < std::time::Duration::from_millis(150) {
                         frame.needs_redraw = true;
                     }
+                }
+
+                if history_animating {
+                    frame.needs_redraw = true;
                 }
             }
 

@@ -57,6 +57,21 @@ pub struct AnimFrame {
     pub needs_redraw: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct HistoryEntry {
+    pub id: u64,
+    pub keys: Vec<String>,
+    pub birth: Instant,
+    pub multiplier_birth: Option<Instant>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RenderHistoryItem {
+    pub keys: Vec<String>,
+    pub multiplier_birth: Option<Instant>,
+    pub alpha: f32,
+}
+
 pub struct StateMachine {
     pub state: BubbleState,
     pub visible_duration: Duration,
@@ -68,6 +83,11 @@ pub struct StateMachine {
     pub exclude_apps: Vec<String>,
     pub custom_style: CustomStyle,
     pub last_strike_time: Instant,
+    // 历史排队流
+    pub enable_history: bool,
+    pub max_history: usize,
+    pub history_queue: Vec<HistoryEntry>,
+    pub next_entry_id: u64,
     // V1.0 新增字段
     pub enabled: bool,
     pub show_keyboard: bool,
@@ -99,6 +119,10 @@ impl StateMachine {
             exclude_apps: Vec::new(),
             custom_style: CustomStyle::new(),
             last_strike_time: Instant::now() - Duration::from_secs(10),
+            enable_history: false,
+            max_history: 3,
+            history_queue: Vec::new(),
+            next_entry_id: 1,
             enabled: true,
             show_keyboard: true,
             show_mouse: true,
@@ -109,6 +133,108 @@ impl StateMachine {
             theme: "dark".to_string(),
             scale: 1.0,
         }
+    }
+
+    /// 将新按键加入历史队列（或在禁用历史时替换为单气泡）
+    pub fn push_history(&mut self, keys: Vec<String>, multiplier_birth: Option<Instant>) {
+        if keys.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        self.on_key_press();
+
+        if !self.enable_history {
+            // 单气泡模式
+            self.history_queue.clear();
+            self.history_queue.push(HistoryEntry {
+                id: self.next_entry_id,
+                keys,
+                birth: now,
+                multiplier_birth,
+            });
+            self.next_entry_id += 1;
+            return;
+        }
+
+        // 历史排队流模式：
+        // 如果与最后一条的基本按键相同（如仅乘数更新），则就地更新该条目并刷新时间
+        let is_same_base = if let Some(last) = self.history_queue.last() {
+            let last_base: Vec<&str> = last.keys.iter().filter(|k| !k.starts_with('×')).map(|s| s.as_str()).collect();
+            let new_base: Vec<&str> = keys.iter().filter(|k| !k.starts_with('×')).map(|s| s.as_str()).collect();
+            last_base == new_base
+        } else {
+            false
+        };
+
+        if is_same_base {
+            if let Some(last) = self.history_queue.last_mut() {
+                last.keys = keys;
+                last.multiplier_birth = multiplier_birth;
+                last.birth = now;
+            }
+        } else {
+            self.history_queue.push(HistoryEntry {
+                id: self.next_entry_id,
+                keys,
+                birth: now,
+                multiplier_birth,
+            });
+            self.next_entry_id += 1;
+            // 限制最大历史条数
+            let max = self.max_history.max(1);
+            if self.history_queue.len() > max {
+                let remove_count = self.history_queue.len() - max;
+                self.history_queue.drain(0..remove_count);
+            }
+        }
+    }
+
+    /// 获取当前所有活跃历史条目及其各自的 Alpha 透明度，并计算整体是否需要重绘
+    pub fn get_active_history(&mut self) -> (Vec<RenderHistoryItem>, bool) {
+        let now = Instant::now();
+        let total_lifetime = self.visible_duration + self.fade_duration;
+        
+        // 移除已经彻底淡出超时的条目
+        self.history_queue.retain(|entry| now.duration_since(entry.birth) < total_lifetime);
+
+        if self.history_queue.is_empty() {
+            return (Vec::new(), false);
+        }
+
+        let mut items = Vec::new();
+        let mut any_animating = false;
+
+        for entry in &self.history_queue {
+            let elapsed = now.duration_since(entry.birth);
+            let alpha = if elapsed < self.fade_in_duration {
+                any_animating = true;
+                if self.anim_style == "instant" {
+                    1.0
+                } else {
+                    let p = (elapsed.as_secs_f32() / self.fade_in_duration.as_secs_f32()).clamp(0.0, 1.0);
+                    ease_out_cubic(p)
+                }
+            } else if elapsed < self.visible_duration {
+                1.0
+            } else if elapsed < total_lifetime {
+                any_animating = true;
+                let fade_elapsed = elapsed - self.visible_duration;
+                let p = (fade_elapsed.as_secs_f32() / self.fade_duration.as_secs_f32()).clamp(0.0, 1.0);
+                (1.0 - ease_out_cubic(p)).max(0.0)
+            } else {
+                0.0
+            };
+
+            if alpha > 0.0 {
+                items.push(RenderHistoryItem {
+                    keys: entry.keys.clone(),
+                    multiplier_birth: entry.multiplier_birth,
+                    alpha: alpha * self.opacity,
+                });
+            }
+        }
+
+        (items, any_animating)
     }
 
     /// 根据事件分类判断是否应该显示气泡（默认兼容）
@@ -347,6 +473,12 @@ impl StateMachine {
         }
         if let Some(merge) = obj.get("mergeRepeats").and_then(|v| v.as_bool()) {
             self.merge_repeats = merge;
+        }
+        if let Some(enable) = obj.get("enableHistory").and_then(|v| v.as_bool()) {
+            self.enable_history = enable;
+        }
+        if let Some(max) = obj.get("maxHistory").and_then(|v| v.as_u64()) {
+            self.max_history = (max as usize).clamp(1, 10);
         }
         if let Some(apps) = obj.get("excludeApps").and_then(|v| v.as_array()) {
             let list: Vec<String> = apps.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
@@ -803,5 +935,67 @@ mod tests {
         let frame = sm.tick_frame();
         // 处于过冲回弹区间，scale 明显大于 0.85
         assert!(frame.scale > 0.90);
+    }
+
+    #[test]
+    fn test_history_queue_single_mode() {
+        let mut sm = StateMachine::new();
+        sm.enable_history = false;
+        sm.push_history(vec!["Ctrl".to_string(), "C".to_string()], None);
+        assert_eq!(sm.history_queue.len(), 1);
+        assert_eq!(sm.history_queue[0].keys, vec!["Ctrl", "C"]);
+
+        sm.push_history(vec!["Ctrl".to_string(), "V".to_string()], None);
+        // 单气泡模式下被新条目替换
+        assert_eq!(sm.history_queue.len(), 1);
+        assert_eq!(sm.history_queue[0].keys, vec!["Ctrl", "V"]);
+    }
+
+    #[test]
+    fn test_history_queue_stream_mode_capacity() {
+        let mut sm = StateMachine::new();
+        sm.enable_history = true;
+        sm.max_history = 3;
+
+        sm.push_history(vec!["Ctrl".to_string(), "A".to_string()], None);
+        sm.push_history(vec!["Ctrl".to_string(), "C".to_string()], None);
+        sm.push_history(vec!["Ctrl".to_string(), "V".to_string()], None);
+        assert_eq!(sm.history_queue.len(), 3);
+
+        // 第 4 条进入，最早的 Ctrl+A 被挤出队列
+        sm.push_history(vec!["Alt".to_string(), "Tab".to_string()], None);
+        assert_eq!(sm.history_queue.len(), 3);
+        assert_eq!(sm.history_queue[0].keys, vec!["Ctrl", "C"]);
+        assert_eq!(sm.history_queue[1].keys, vec!["Ctrl", "V"]);
+        assert_eq!(sm.history_queue[2].keys, vec!["Alt", "Tab"]);
+    }
+
+    #[test]
+    fn test_history_queue_repeat_merging() {
+        let mut sm = StateMachine::new();
+        sm.enable_history = true;
+        sm.max_history = 3;
+
+        sm.push_history(vec!["Ctrl".to_string(), "C".to_string()], None);
+        assert_eq!(sm.history_queue.len(), 1);
+
+        // 同一按键连击更新乘数
+        sm.push_history(vec!["Ctrl".to_string(), "C".to_string(), "×2".to_string()], Some(Instant::now()));
+        assert_eq!(sm.history_queue.len(), 1);
+        assert_eq!(sm.history_queue[0].keys, vec!["Ctrl", "C", "×2"]);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_history() {
+        let mut sm = StateMachine::new();
+        assert!(!sm.enable_history);
+        assert_eq!(sm.max_history, 3);
+
+        sm.apply_persisted_settings(&serde_json::json!({
+            "enableHistory": true,
+            "maxHistory": 4
+        }));
+        assert!(sm.enable_history);
+        assert_eq!(sm.max_history, 4);
     }
 }

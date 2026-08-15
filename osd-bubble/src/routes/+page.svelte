@@ -37,6 +37,8 @@
   let showScroll = false;
   let onlyShortcuts = false;
   let mergeRepeats = true;
+  let enableHistory = false;
+  let maxHistory = 3;
   let animStyle = 'bounce';
   let theme = 'system';
   /** @type {string[]} */
@@ -137,6 +139,8 @@
           showScroll = saved.showScroll !== undefined ? saved.showScroll : false;
           onlyShortcuts = saved.onlyShortcuts !== undefined ? saved.onlyShortcuts : false;
           mergeRepeats = saved.mergeRepeats !== undefined ? saved.mergeRepeats : true;
+          enableHistory = saved.enableHistory !== undefined ? saved.enableHistory : false;
+          maxHistory = saved.maxHistory || 3;
           animStyle = saved.animStyle || 'bounce';
           theme = saved.theme || 'system';
           excludeApps = saved.excludeApps || [];
@@ -172,6 +176,8 @@
     invoke('update_position', { quadrant: parseInt(quadrant) });
     invoke('update_bubble_style', { style: bubbleStyle });
     invoke('update_anim_style', { style: animStyle });
+    invoke('update_enable_history', { enable: enableHistory });
+    invoke('update_max_history', { max: maxHistory });
     invoke('update_custom_style', { style: customStyle });
     invoke('toggle_enabled', { enabled });
     invoke('update_show_keyboard', { show: showKeyboard });
@@ -193,6 +199,8 @@
       fontFamily,
       bubbleStyle,
       animStyle,
+      enableHistory,
+      maxHistory,
       customStyle,
       enabled,
       showKeyboard,
@@ -226,7 +234,7 @@
   let firstRun = true;
 
   $: {
-    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; animStyle; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
+    fadeDelay; opacity; quadrant; bubbleScale; fontFamily; bubbleStyle; animStyle; enableHistory; maxHistory; customStyle; enabled; showKeyboard; showMouse; showScroll; onlyShortcuts; mergeRepeats; theme; excludeApps; autoStart;
     if (isLoaded && browser) {
       if (firstRun) {
         // 首次加载回填不触发保存，与旧行为保持一致
@@ -361,6 +369,8 @@
     showScroll = false;
     onlyShortcuts = false;
     mergeRepeats = true;
+    enableHistory = false;
+    maxHistory = 3;
     animStyle = 'bounce';
     theme = 'system';
     excludeApps = [];
@@ -657,6 +667,36 @@
                 </label>
               </div>
               <p class="description">连续快速敲击相同按键或快捷键时，合并展示为 ×2、×3 胶囊角标</p>
+            </div>
+
+            <div class="row">
+              <div class="row-line">
+                <label for="toggle-enable-history">按键历史排队流</label>
+                <label class="switch">
+                  <input id="toggle-enable-history" type="checkbox" bind:checked={enableHistory} />
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <p class="description">同时保留最近输入的多组快捷键序列，新按键入场时平滑推挤排队</p>
+              
+              {#if enableHistory}
+                <div style="margin-top: 10px;">
+                  <div class="row-line" style="margin-bottom: 6px;">
+                    <span class="row-label" id="max-history-label">最大排队数量</span>
+                  </div>
+                  <div class="theme-segmented" role="group" aria-labelledby="max-history-label">
+                    <button class="theme-seg {maxHistory === 2 ? 'active' : ''}" onclick={() => { maxHistory = 2; }}>
+                      2 组
+                    </button>
+                    <button class="theme-seg {maxHistory === 3 ? 'active' : ''}" onclick={() => { maxHistory = 3; }}>
+                      3 组 (推荐)
+                    </button>
+                    <button class="theme-seg {maxHistory === 4 ? 'active' : ''}" onclick={() => { maxHistory = 4; }}>
+                      4 组
+                    </button>
+                  </div>
+                </div>
+              {/if}
             </div>
           </section>
 
