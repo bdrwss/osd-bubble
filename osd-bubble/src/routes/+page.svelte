@@ -924,8 +924,34 @@
           </div>
           <div class="about-name">OSD BUBBLE</div>
           <div class="about-meta">
-            <span class="value">v{appVersion}</span>
-            <span class="about-tag">按键可视化工具 · KEYSTROKE OSD</span>
+            <span class="value">v{appVersion} 正式版</span>
+            <span class="about-tag">轻量级按键与外设 OSD 可视化神器</span>
+          </div>
+
+          <div class="about-card">
+            <div class="about-info-row">
+              <span class="about-label">开 发 者</span>
+              <span class="about-val highlight">摆渡人吾师</span>
+            </div>
+            <div class="about-info-row">
+              <span class="about-label">定位用途</span>
+              <span class="about-val">专业录屏 · 网课教学 · 快捷键演示</span>
+            </div>
+            <div class="about-info-row">
+              <span class="about-label">核心引擎</span>
+              <span class="about-val">Rust + Tiny-Skia + Tauri 2.0</span>
+            </div>
+          </div>
+
+          <div class="about-features">
+            <div class="feature-chip">⚡ 零延迟底层 Hook</div>
+            <div class="feature-chip">🌊 鼠标涟漪光环</div>
+            <div class="feature-chip">📜 按键历史排队流</div>
+            <div class="feature-chip">🖥️ 屏幕锚点智能贴靠</div>
+          </div>
+
+          <div class="about-copyright">
+            Copyright © 2026 摆渡人吾师. All rights reserved.
           </div>
         </div>
         <footer class="about-foot">
@@ -1937,7 +1963,7 @@
   }
 
   .about-dialog {
-    width: 320px;
+    width: 360px;
     max-width: 100%;
     background: var(--panel);
     border: 1px solid var(--line);
@@ -1979,11 +2005,11 @@
   }
 
   .about-body {
-    padding: 22px 18px 16px;
+    padding: 20px 18px 14px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     text-align: center;
   }
 
@@ -1995,8 +2021,8 @@
   }
 
   .about-logo {
-    width: 76px;
-    height: 76px;
+    width: 72px;
+    height: 72px;
     object-fit: contain;
     filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.36));
     transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -2017,12 +2043,73 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
 
   .about-tag {
     font-size: 0.78rem;
     color: var(--muted);
+  }
+
+  .about-card {
+    width: 100%;
+    background: var(--well);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+    margin-top: 4px;
+  }
+
+  .about-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.76rem;
+  }
+
+  .about-label {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.05em;
+  }
+
+  .about-val {
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  .about-val.highlight {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .about-features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .feature-chip {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 0.72rem;
+    color: var(--ink);
+    text-align: left;
+  }
+
+  .about-copyright {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-top: 4px;
+    font-family: var(--font-mono);
   }
 
   .about-foot {
