@@ -8,8 +8,8 @@
 
 Tailored for **Screen Recording · Live Streaming · Online Tutorials · Presentations**
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-blue.svg?style=flat-square)](https://github.com/)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2B-0078D6.svg?style=flat-square&logo=windows)](https://github.com/)
+[![Release](https://img.shields.io/badge/release-v1.0.0-blue.svg?style=flat-square)](https://github.com/bdrwss/osd-bubble/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20|%20macOS%20|%20Linux-0078D6.svg?style=flat-square)](https://github.com/bdrwss/osd-bubble/releases)
 [![Rust](https://img.shields.io/badge/Rust-1.77%2B-DEA584.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-v2.0-24C8DB.svg?style=flat-square&logo=tauri)](https://tauri.app/)
 [![Svelte](https://img.shields.io/badge/Svelte-v5.0-FF3E00.svg?style=flat-square&logo=svelte)](https://svelte.dev/)
@@ -23,8 +23,8 @@ Tailored for **Screen Recording · Live Streaming · Online Tutorials · Present
 
 ## ✨ Features
 
-- ⚡ **Zero-Latency Low-Level Hook**: Raw Win32 global input capture for keystrokes, shortcuts, mouse clicks, and wheel scrolling.
-- 🎨 **Hardware-Accelerated Layered Window**: Built with Rust + `Tiny-Skia` on top of Windows `WS_EX_LAYERED` layered window for butter-smooth antialiased rendering with zero webview overhead.
+- ⚡ **Zero-Latency Low-Level Hook**: Raw global input capture for keystrokes, shortcuts, mouse clicks, and wheel scrolling.
+- 🎨 **Hardware-Accelerated Layered Window**: Built with Rust + `Tiny-Skia` on top of native layered window for butter-smooth antialiased rendering with zero webview overhead.
 - 🌊 **Mouse Click Glow & Ripples**: 260ms reactive ripple effects for Left (Cyan), Right (Amber), and Middle (Mint Green) clicks.
 - 📜 **Keystroke History Waterfall Stream**: Smooth multi-queue display (2 / 3 / 4 items) with independent row decay and lifecycles.
 - 🔢 **Smart Combo Multiplier Badge**: 600ms automatic combo detection with Keyviz-style bouncing pill badges (`×2`, `×3`...).
@@ -34,7 +34,7 @@ Tailored for **Screen Recording · Live Streaming · Online Tutorials · Present
 - 🎈 **Rich Easing Physics Animations**: Built-in `bounce`, `slide_up`, `fade`, and `instant` curves.
 - 🛡️ **Foreground Process Blocklist**: Automatic silence when targeted games or fullscreen apps (e.g., `csgo.exe`) are in focus.
 - 🧠 **Position Memory & Auto Centering**: Smart initial center positioning with persistent coordinates across reboots.
-- 🚀 **Ultra-Lightweight & Portable**: Single portable standalone `.exe` (~13MB) with minimal memory footprint (< 25MB).
+- 🚀 **Full Cross-Platform Support**: Windows, macOS (Intel & Apple Silicon), and Linux.
 
 ---
 
@@ -42,8 +42,11 @@ Tailored for **Screen Recording · Live Streaming · Online Tutorials · Present
 
 Download the latest version from the [Releases page](https://github.com/bdrwss/osd-bubble/releases):
 
-- **Portable Standalone (`osd-bubble.exe`)**: No installation required, run directly anywhere.
-- **Installer Setup (`osd-bubble_1.0.0_x64-setup.exe`)**: Standard Windows installer with start menu & autostart integration.
+| Platform | Installer | Standalone / Portable | Description |
+| :--- | :--- | :--- | :--- |
+| **Windows** | `osd-bubble_1.0.0_x64-setup.exe` | `osd-bubble.exe` | Windows 10/11 (64-bit) |
+| **macOS** | `osd-bubble_1.0.0_x64.dmg` / `aarch64.dmg` | `osd-bubble.app.tar.gz` | Intel & Apple Silicon (M1-M4) |
+| **Linux** | `osd-bubble_1.0.0_amd64.deb` | `osd-bubble_1.0.0_amd64.AppImage` | Debian / Ubuntu / Fedora / Arch |
 
 ---
 

@@ -1,8 +1,11 @@
+pub mod platform;
+#[cfg(target_os = "windows")]
 pub mod overlay;
 pub mod hook;
 pub mod state_machine;
 pub mod renderer;
 pub mod easing;
+#[cfg(target_os = "windows")]
 pub mod ripple_overlay;
 
 use std::sync::Mutex;

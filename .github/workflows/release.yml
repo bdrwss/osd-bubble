@@ -16,6 +16,10 @@ jobs:
         include:
           - platform: 'windows-latest'
             args: ''
+          - platform: 'macos-latest'
+            args: ''
+          - platform: 'ubuntu-22.04'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -37,6 +41,12 @@ jobs:
         with:
           workspaces: './osd-bubble/src-tauri -> target'
 
+      - name: Install Linux dependencies (Ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev
+
       - name: Install frontend dependencies
         run: |
           cd osd-bubble
@@ -50,6 +60,7 @@ jobs:
           projectPath: './osd-bubble'
           tagName: ${{ github.ref_name }}
           releaseName: 'OSD Bubble ${{ github.ref_name }}'
-          releaseBody: 'See the assets to download this version and install.'
+          releaseBody: 'See the assets below to download the installer or portable binary for your operating system (Windows / macOS / Linux).'
           releaseDraft: false
           prerelease: false
+
