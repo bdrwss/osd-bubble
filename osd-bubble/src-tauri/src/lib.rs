@@ -11,8 +11,12 @@ pub mod ripple_overlay;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
-use windows::Win32::Foundation::{HWND, WPARAM, LPARAM, POINT};
-use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_USER, GetCursorPos};
+
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::{HWND, WPARAM, LPARAM};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
+
 use state_machine::{StateMachine, CustomStyle};
 use tauri::{
     tray::{TrayIconBuilder, MouseButton, TrayIconEvent},
@@ -20,12 +24,9 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{ShortcutState, GlobalShortcutExt};
 use tauri_plugin_store::StoreExt;
-use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
-use windows::core::PWSTR;
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, GetForegroundWindow};
 
-pub const WM_UPDATE_BUBBLE: u32 = WM_USER + 1;
-pub const WM_TICK: u32 = WM_USER + 2;
+pub const WM_UPDATE_BUBBLE: u32 = 0x0400 + 1;
+pub const WM_TICK: u32 = 0x0400 + 2;
 
 // 全局共享状态机
 pub static STATE: Mutex<Option<StateMachine>> = Mutex::new(None);
@@ -147,17 +148,24 @@ fn show_settings_window(window: &tauri::WebviewWindow) {
     };
 
     if let (Some(x), Some(y)) = (saved_x, saved_y) {
-        let pt = windows::Win32::Foundation::POINT { x, y };
-        let hmonitor = unsafe {
-            windows::Win32::Graphics::Gdi::MonitorFromPoint(
-                pt,
-                windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONULL,
-            )
-        };
-        if !hmonitor.is_invalid() {
+        #[cfg(target_os = "windows")]
+        {
+            let pt = windows::Win32::Foundation::POINT { x, y };
+            let hmonitor = unsafe {
+                windows::Win32::Graphics::Gdi::MonitorFromPoint(
+                    pt,
+                    windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONULL,
+                )
+            };
+            if !hmonitor.is_invalid() {
+                let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+            } else {
+                let _ = window.center();
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
             let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
-        } else {
-            let _ = window.center();
         }
     } else {
         let _ = window.center();
@@ -312,101 +320,63 @@ fn simulate_keys() {
     }
 
     if should_show {
-        unsafe {
-            let mut pt = POINT::default();
-            let _ = GetCursorPos(&mut pt);
-            let hwnd = HWND(*OVERLAY_HWND.lock().unwrap() as *mut _);
-            if !hwnd.0.is_null() {
-                let _ = PostMessageW(Some(hwnd), WM_UPDATE_BUBBLE, WPARAM((pt.x + 16) as usize), LPARAM((pt.y + 64) as isize));
-            }
-        }
+        let platform = platform::create_platform();
+        let (x, y) = platform.get_cursor_pos();
+        platform.update_bubble(x + 16, y + 64);
     }
 }
 
 fn is_foreground_blacklisted(exclude_apps: &[String]) -> bool {
-    if exclude_apps.is_empty() {
-        return false;
-    }
-    unsafe {
-        let hwnd = GetForegroundWindow();
-        if hwnd.0.is_null() {
-            return false;
-        }
-        let mut pid = 0;
-        GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        if pid == 0 {
-            return false;
-        }
-        
-        let hprocess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        if let Ok(handle) = hprocess {
-            let mut buffer = [0u16; 1024];
-            let mut size = buffer.len() as u32;
-            if QueryFullProcessImageNameW(handle, windows::Win32::System::Threading::PROCESS_NAME_FORMAT(0), PWSTR(buffer.as_mut_ptr()), &mut size).is_ok() {
-                let path = String::from_utf16_lossy(&buffer[..size as usize]);
-                let filename = std::path::Path::new(&path)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                let _ = windows::Win32::Foundation::CloseHandle(handle);
-                
-                for app in exclude_apps {
-                    if filename == app.to_lowercase() {
-                        return true;
-                    }
-                }
-            } else {
-                let _ = windows::Win32::Foundation::CloseHandle(handle);
-            }
-        }
-    }
-    false
+    let platform = platform::create_platform();
+    platform.is_foreground_blacklisted(exclude_apps)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let (tx, rx) = std::sync::mpsc::channel();
-    let (tx_ripple, rx_ripple) = std::sync::mpsc::channel();
-    
     *STATE.lock().unwrap() = Some(StateMachine::new());
 
-    // 启动原生气泡渲染线程
-    std::thread::spawn(move || {
-        println!("正在创建原生透明窗口...");
-        if let Err(e) = overlay::show_overlay(tx) {
-            println!("创建窗口失败: {:?}", e);
-        }
-    });
+    #[cfg(target_os = "windows")]
+    {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (tx_ripple, rx_ripple) = std::sync::mpsc::channel();
 
-    // 启动独立鼠标点击涟漪光环窗口线程
-    std::thread::spawn(move || {
-        if let Err(e) = ripple_overlay::show_ripple_overlay(tx_ripple) {
-            println!("创建鼠标涟漪窗口失败: {:?}", e);
-        }
-    });
+        // 启动原生气泡渲染线程
+        std::thread::spawn(move || {
+            println!("正在创建原生透明窗口...");
+            if let Err(e) = overlay::show_overlay(tx) {
+                println!("创建窗口失败: {:?}", e);
+            }
+        });
 
-    let hwnd_isize = rx.recv().expect("未能接收到窗口句柄");
-    *OVERLAY_HWND.lock().unwrap() = hwnd_isize;
+        // 启动独立鼠标点击涟漪光环窗口线程
+        std::thread::spawn(move || {
+            if let Err(e) = ripple_overlay::show_ripple_overlay(tx_ripple) {
+                println!("创建鼠标涟漪窗口失败: {:?}", e);
+            }
+        });
 
-    let ripple_hwnd_isize = rx_ripple.recv().unwrap_or(0);
+        let hwnd_isize = rx.recv().expect("未能接收到窗口句柄");
+        *OVERLAY_HWND.lock().unwrap() = hwnd_isize;
 
-    // 启动一个 60fps 的定时器线程，驱动状态机动画与鼠标涟漪动画
-    std::thread::spawn(move || {
-        let timer_hwnd = HWND(hwnd_isize as *mut _);
-        let ripple_hwnd = if ripple_hwnd_isize != 0 { Some(HWND(ripple_hwnd_isize as *mut _)) } else { None };
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(16));
-            unsafe {
-                let _ = PostMessageW(Some(timer_hwnd), WM_TICK, WPARAM(0), LPARAM(0));
-                if let Some(rhw) = ripple_hwnd {
-                    if ripple_overlay::RIPPLE_STATE.lock().unwrap().is_some() {
-                        let _ = PostMessageW(Some(rhw), ripple_overlay::WM_RIPPLE_TICK, WPARAM(0), LPARAM(0));
+        let ripple_hwnd_isize = rx_ripple.recv().unwrap_or(0);
+
+        // 启动一个 60fps 的定时器线程，驱动状态机动画与鼠标涟漪动画
+        std::thread::spawn(move || {
+            let timer_hwnd = HWND(hwnd_isize as *mut _);
+            let ripple_hwnd = if ripple_hwnd_isize != 0 { Some(HWND(ripple_hwnd_isize as *mut _)) } else { None };
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                unsafe {
+                    let _ = PostMessageW(Some(timer_hwnd), WM_TICK, WPARAM(0), LPARAM(0));
+                    if let Some(rhw) = ripple_hwnd {
+                        if ripple_overlay::RIPPLE_STATE.lock().unwrap().is_some() {
+                            let _ = PostMessageW(Some(rhw), ripple_overlay::WM_RIPPLE_TICK, WPARAM(0), LPARAM(0));
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 
     // 全局钩子监听线程已移至 setup 中启动（store 恢复设置之后），
     // 避免启动窗口期内以默认配置处理事件（TASK-001 缺陷B）
@@ -448,7 +418,6 @@ pub fn run() {
             // 消除启动窗口期内以默认配置显示气泡的问题（TASK-001 缺陷B）
             std::thread::spawn(move || {
                 println!("正在启动全局钩子监听...");
-                let hwnd = HWND(*OVERLAY_HWND.lock().unwrap() as *mut _);
                 HOOK_BOOT_TIME.get_or_init(Instant::now);
                 if let Err(error) = rdev::listen(move |event| {
                     log_hook_event(&event.event_type);
@@ -463,11 +432,9 @@ pub fn run() {
                             }
                         };
                         if enable_ripple && !is_blacklisted {
-                            unsafe {
-                                let mut pt = POINT::default();
-                                let _ = GetCursorPos(&mut pt);
-                                ripple_overlay::trigger_ripple(pt.x, pt.y, button);
-                            }
+                            let platform = platform::create_platform();
+                            let (x, y) = platform.get_cursor_pos();
+                            platform.trigger_ripple(x, y, button);
                         }
                     }
 
@@ -495,13 +462,10 @@ pub fn run() {
                             }
 
                             if should_show {
-                                // 立即触发一次渲染和移动
-                                unsafe {
-                                    let mut pt = POINT::default();
-                                    let _ = GetCursorPos(&mut pt);
-                                    // 将 Y 轴偏移量从 24 增加到 64，以避开输入法候选框
-                                    let _ = PostMessageW(Some(hwnd), WM_UPDATE_BUBBLE, WPARAM((pt.x + 16) as usize), LPARAM((pt.y + 64) as isize));
-                                }
+                                // 立即触发一次渲染和移动（避开输入法候选框）
+                                let platform = platform::create_platform();
+                                let (x, y) = platform.get_cursor_pos();
+                                platform.update_bubble(x + 16, y + 64);
                             }
                         }
                     }
