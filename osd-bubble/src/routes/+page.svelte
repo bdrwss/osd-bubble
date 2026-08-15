@@ -430,6 +430,7 @@
     theme = 'system';
     excludeApps = [];
     autoStart = false;
+    windowPosition = null;
     saveSettings();
     showResetConfirm = false;
     showToast('已恢复默认设置');
