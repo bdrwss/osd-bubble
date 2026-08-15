@@ -116,6 +116,55 @@ fn update_anchor_margins(margin_x: i32, margin_y: i32) {
 }
 
 #[tauri::command]
+fn update_window_position(x: i32, y: i32) {
+    if let Some(state) = STATE.lock().unwrap().as_mut() {
+        state.window_pos_x = Some(x);
+        state.window_pos_y = Some(y);
+    }
+}
+
+fn show_or_toggle_settings_window(app_handle: &tauri::AppHandle) {
+    if let Some(window) = app_handle.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            show_settings_window(&window);
+        }
+    }
+}
+
+fn show_settings_window(window: &tauri::WebviewWindow) {
+    let (saved_x, saved_y) = {
+        let state = STATE.lock().unwrap();
+        if let Some(ref sm) = *state {
+            (sm.window_pos_x, sm.window_pos_y)
+        } else {
+            (None, None)
+        }
+    };
+
+    if let (Some(x), Some(y)) = (saved_x, saved_y) {
+        let pt = windows::Win32::Foundation::POINT { x, y };
+        let hmonitor = unsafe {
+            windows::Win32::Graphics::Gdi::MonitorFromPoint(
+                pt,
+                windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONULL,
+            )
+        };
+        if !hmonitor.is_invalid() {
+            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+        } else {
+            let _ = window.center();
+        }
+    } else {
+        let _ = window.center();
+    }
+
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+#[tauri::command]
 fn update_bubble_style(style: String) {
     if let Some(state) = STATE.lock().unwrap().as_mut() {
         state.bubble_style = style;
@@ -484,14 +533,7 @@ pub fn run() {
                             std::process::exit(0);
                         }
                         "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                if window.is_visible().unwrap_or(false) {
-                                    let _ = window.hide();
-                                } else {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                }
-                            }
+                            show_or_toggle_settings_window(&app_handle);
                         }
                         "toggle" => {
                             // 切换启用状态
@@ -529,22 +571,37 @@ pub fn run() {
                         ..
                     } => {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        show_or_toggle_settings_window(app);
                     }
                     _ => {}
                 })
                 .build(app)?;
 
-            // 显式确保主窗口应用最新图标
+            // 显式确保主窗口应用最新图标与拦截关闭/移动事件
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.set_icon(icon);
+                let app_h = app.handle().clone();
+                window.on_window_event(move |event| match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        if let Some(w) = app_h.get_webview_window("main") {
+                            if let Ok(pos) = w.outer_position() {
+                                if let Some(state) = STATE.lock().unwrap().as_mut() {
+                                    state.window_pos_x = Some(pos.x);
+                                    state.window_pos_y = Some(pos.y);
+                                }
+                            }
+                            let _ = w.hide();
+                        }
+                    }
+                    tauri::WindowEvent::Moved(pos) => {
+                        if let Some(state) = STATE.lock().unwrap().as_mut() {
+                            state.window_pos_x = Some(pos.x);
+                            state.window_pos_y = Some(pos.y);
+                        }
+                    }
+                    _ => {}
+                });
             }
 
             // 注册全局快捷键
@@ -559,10 +616,7 @@ pub fn run() {
 
             app.global_shortcut().on_shortcut("Ctrl+Shift+,", move |app_handle, _shortcut, event| {
                 if event.state == ShortcutState::Pressed {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    show_or_toggle_settings_window(app_handle);
                 }
             })?;
 
@@ -574,6 +628,7 @@ pub fn run() {
             update_position_mode,
             update_screen_anchor,
             update_anchor_margins,
+            update_window_position,
             update_bubble_style,
             update_exclude_apps,
             update_custom_style,

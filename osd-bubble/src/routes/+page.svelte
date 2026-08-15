@@ -47,6 +47,8 @@
   let anchorMarginY = 48;
   let animStyle = 'bounce';
   let theme = 'system';
+  /** @type {{ x: number, y: number } | null} */
+  let windowPosition = null;
   /** @type {string[]} */
   let excludeApps = [];
   let newAppInput = '';
@@ -153,12 +155,35 @@
           screenAnchor = saved.screenAnchor || 'bottom_right';
           anchorMarginX = saved.anchorMarginX !== undefined ? saved.anchorMarginX : 32;
           anchorMarginY = saved.anchorMarginY !== undefined ? saved.anchorMarginY : 48;
+          windowPosition = saved.windowPosition || null;
           animStyle = saved.animStyle || 'bounce';
           theme = saved.theme || 'system';
           excludeApps = saved.excludeApps || [];
           autoStart = saved.autoStart || false;
         } catch (e) {
           console.error('Failed to apply loaded settings:', e);
+        }
+      }
+
+      if (isTauriRuntime()) {
+        try {
+          const { getCurrentWindow, PhysicalPosition } = await import('@tauri-apps/api/window');
+          const appWindow = getCurrentWindow();
+          if (windowPosition && typeof windowPosition.x === 'number' && typeof windowPosition.y === 'number') {
+            await appWindow.setPosition(new PhysicalPosition(windowPosition.x, windowPosition.y));
+            invoke('update_window_position', { x: windowPosition.x, y: windowPosition.y });
+          } else {
+            await appWindow.center();
+          }
+          await appWindow.onMoved((event) => {
+            windowPosition = { x: event.payload.x, y: event.payload.y };
+            invoke('update_window_position', { x: event.payload.x, y: event.payload.y });
+            if (isLoaded && browser) {
+              persistSettings();
+            }
+          });
+        } catch (e) {
+          console.error('Failed to init window position:', e);
         }
       }
     }
@@ -233,7 +258,8 @@
       mergeRepeats,
       theme,
       excludeApps,
-      autoStart
+      autoStart,
+      windowPosition
     };
     if (isTauriRuntime()) {
       settingsStore.set(SETTINGS_KEY, settings)

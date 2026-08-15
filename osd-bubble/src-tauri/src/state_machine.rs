@@ -96,6 +96,9 @@ pub struct StateMachine {
     pub screen_anchor: String,
     pub anchor_margin_x: i32,
     pub anchor_margin_y: i32,
+    // 窗口记忆坐标
+    pub window_pos_x: Option<i32>,
+    pub window_pos_y: Option<i32>,
     // V1.0 新增字段
     pub enabled: bool,
     pub show_keyboard: bool,
@@ -137,6 +140,8 @@ impl StateMachine {
             screen_anchor: "bottom_right".to_string(),
             anchor_margin_x: 32,
             anchor_margin_y: 48,
+            window_pos_x: None,
+            window_pos_y: None,
             enabled: true,
             show_keyboard: true,
             show_mouse: true,
@@ -511,6 +516,12 @@ impl StateMachine {
         }
         if let Some(my) = obj.get("anchorMarginY").and_then(|v| v.as_i64()) {
             self.anchor_margin_y = (my as i32).clamp(0, 300);
+        }
+        if let Some(pos) = obj.get("windowPosition").and_then(|v| v.as_object()) {
+            let x = pos.get("x").and_then(|v| v.as_i64()).map(|v| v as i32);
+            let y = pos.get("y").and_then(|v| v.as_i64()).map(|v| v as i32);
+            self.window_pos_x = x;
+            self.window_pos_y = y;
         }
         if let Some(apps) = obj.get("excludeApps").and_then(|v| v.as_array()) {
             let list: Vec<String> = apps.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
@@ -1063,5 +1074,21 @@ mod tests {
         assert_eq!(sm.screen_anchor, "bottom_center");
         assert_eq!(sm.anchor_margin_x, 40);
         assert_eq!(sm.anchor_margin_y, 60);
+    }
+
+    #[test]
+    fn test_apply_persisted_settings_window_position() {
+        let mut sm = StateMachine::new();
+        assert_eq!(sm.window_pos_x, None);
+        assert_eq!(sm.window_pos_y, None);
+
+        sm.apply_persisted_settings(&serde_json::json!({
+            "windowPosition": {
+                "x": 450,
+                "y": 280
+            }
+        }));
+        assert_eq!(sm.window_pos_x, Some(450));
+        assert_eq!(sm.window_pos_y, Some(280));
     }
 }
